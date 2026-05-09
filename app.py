@@ -55,5 +55,8 @@ def stream(room):
     return Response(event_stream(), mimetype="text/event-stream")
 
 if __name__ == '__main__':
+    # Mudamos de 0.0.0.0 para 127.0.0.1 para evitar o erro de segurança do Chrome
+    socketio.run(app, host='127.0.0.1', port=5000, debug=True)
+
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
