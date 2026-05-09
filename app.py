@@ -4,24 +4,38 @@ from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.utils import secure_filename
 
-# Configuração para garantir que o Flask ache a pasta templates
+# Configuração de caminhos para o Flask não se perder
 base_dir = os.path.abspath(os.path.dirname(__file__))
-app = Flask(__name__, 
-            template_folder=os.path.join(base_dir, 'templates'),
-            static_folder=os.path.join(base_dir, 'uploads'))
+template_dir = os.path.join(base_dir, 'templates')
+upload_dir = os.path.join(base_dir, 'uploads')
 
-app.config['SECRET_KEY'] = 'chave_mestra_123'
-app.config['UPLOAD_FOLDER'] = os.path.join(base_dir, 'uploads')
+app = Flask(__name__, template_folder=template_dir)
+app.config['SECRET_KEY'] = 'chave_segura_whatsapp'
+app.config['UPLOAD_FOLDER'] = upload_dir
+
+# Inicializa o SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Cria a pasta de uploads se não existir
+if not os.path.exists(upload_dir):
+    os.makedirs(upload_dir)
 
+# --- BANCO DE DADOS ---
 def init_db():
-    conn = sqlite3.connect('database.db')
-    conn.execute('CREATE TABLE IF NOT EXISTS msgs (id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT, user TEXT, msg TEXT)')
+    conn = sqlite3.connect('chat_database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT,
+            username TEXT,
+            message TEXT
+        )
+    ''')
+    conn.commit()
     conn.close()
 
+# --- ROTAS ---
 @app.route('/')
 def index():
     user = request.args.get('user', 'Membro')
@@ -29,36 +43,55 @@ def index():
     return render_template('chat.html', user=user, room=room)
 
 @app.route('/upload', methods=['POST'])
-def upload():
-    if 'file' not in request.files: return jsonify({'err': 'no file'}), 400
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Nenhum arquivo'}), 400
     file = request.files['file']
-    fname = secure_filename(file.filename)
-    file.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
-    return jsonify({'url': f'/uploads/{fname}', 'name': fname})
+    if file.filename == '':
+        return jsonify({'error': 'Nome vazio'}), 400
+    
+    filename = secure_filename(file.filename)
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    return jsonify({'url': f'/uploads/{filename}', 'name': filename})
 
 @app.route('/uploads/<filename>')
-def files(filename):
+def serve_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+# --- EVENTOS SOCKET.IO ---
 @socketio.on('join')
 def on_join(data):
+    username = data['user']
     room = data['room']
     join_room(room)
-    conn = sqlite3.connect('database.db')
+    
+    # Carrega histórico do banco
+    conn = sqlite3.connect('chat_database.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT user, msg FROM msgs WHERE room = ? ORDER BY id ASC', (room,))
-    emit('load_history', [{"user": r[0], "msg": r[1]} for r in cursor.fetchall()])
+    cursor.execute('SELECT username, message FROM messages WHERE room = ? ORDER BY id ASC', (room,))
+    history = [{"user": row[0], "msg": row[1]} for row in cursor.fetchall()]
     conn.close()
+    
+    emit('load_history', history)
 
 @socketio.on('send_message')
-def handle(data):
-    conn = sqlite3.connect('database.db')
-    conn.execute('INSERT INTO msgs (room, user, msg) VALUES (?, ?, ?)', (data['room'], data['user'], data['msg']))
+def handle_message(data):
+    room = data['room']
+    user = data['user']
+    msg = data['msg']
+    
+    # Salva no banco de dados
+    conn = sqlite3.connect('chat_database.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO messages (room, username, message) VALUES (?, ?, ?)', (room, user, msg))
     conn.commit()
     conn.close()
-    emit('receive_message', data, to=data['room'])
+    
+    # Envia para todos na sala
+    emit('receive_message', data, to=room)
 
 if __name__ == '__main__':
     init_db()
-    # Usando 127.0.0.1 para evitar erros de segurança do Chrome
+    print("Servidor rodando em http://127.0.0.1:5000")
+    # USAR 127.0.0.1 É ESSENCIAL PARA EVITAR O ERRO DE SEGURANÇA
     socketio.run(app, host='127.0.0.1', port=5000, debug=True)
