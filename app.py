@@ -65,11 +65,8 @@ rooms_users = {}
 def on_join(data):
     user, room, sid = data['user'], data['room'], request.sid
     join_room(room)
-    
     if room not in rooms_users: rooms_users[room] = {}
     rooms_users[room][sid] = user
-    
-    # Envia histórico e lista de usuários
     emit('load_history', get_history(room))
     emit('update_users', list(set(rooms_users[room].values())), to=room)
 
