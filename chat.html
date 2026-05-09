@@ -1,69 +1,41 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Clone</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #dadbd3; }
+<!-- Dentro do <head>, adicione o script do Socket.IO -->
+<script src="https://cloudflare.com"></script>
+
+<!-- Substitua o seu <script> atual por este: -->
+<script>
+    const socket = io(); // Conecta ao servidor
+    const form = document.getElementById('msgForm');
+    const input = document.getElementById('msgInput');
+    const chat = document.getElementById('chat');
+    
+    // Pega o nome do usuário que o Flask passou
+    const currentUser = "{{ user }}";
+
+    // Enviar mensagem para o servidor
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (text) {
+            socket.emit('send_message', {
+                user: currentUser,
+                msg: text
+            });
+            input.value = '';
+        }
+    };
+
+    // Receber mensagem do servidor e mostrar na tela
+    socket.on('receive_message', (data) => {
+        const div = document.createElement('div');
         
-        /* Cabeçalho */
-        .header { background-color: #075e54; color: white; padding: 10px 15px; display: flex; align-items: center; position: fixed; top: 0; width: 100%; height: 60px; z-index: 1000; }
-        .header h3 { margin-left: 10px; font-size: 18px; }
-
-        /* Área de Mensagens */
-        .chat-container { margin-top: 60px; margin-bottom: 70px; padding: 15px; display: flex; flex-direction: column; }
+        // Se o nome for o meu, balão verde (sent), se não, balão branco (received)
+        const isMe = data.user === currentUser;
+        div.className = `message ${isMe ? 'sent' : 'received'}`;
         
-        .message { max-width: 70%; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; position: relative; font-size: 14.5px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        // Adiciona o nome de quem enviou antes da mensagem (estilo grupo)
+        div.innerHTML = `<small style="display:block; color: #075e54; font-weight:bold;">${data.user}</small>${data.msg}`;
         
-        /* Estilo Balão Recebido */
-        .received { background-color: white; align-self: flex-start; }
-        
-        /* Estilo Balão Enviado */
-        .sent { background-color: #dcf8c6; align-self: flex-end; }
-
-        /* Rodapé de Digitação */
-        .input-area { position: fixed; bottom: 0; width: 100%; background: #f0f0f0; padding: 10px; display: flex; align-items: center; }
-        input { flex: 1; padding: 12px; border: none; border-radius: 25px; outline: none; margin-right: 10px; }
-        button { background-color: #075e54; color: white; border: none; padding: 10px 15px; border-radius: 50%; cursor: pointer; }
-    </style>
-</head>
-<body>
-
-    <div class="header">
-        <div style="width: 40px; height: 40px; background: #ccc; border-radius: 50%;"></div>
-        <h3>{{ room }} ({{ user }})</h3>
-    </div>
-
-    <div class="chat-container" id="chat">
-        <!-- Exemplo de mensagens -->
-        <div class="message received">Bem-vindo ao grupo {{ room }}!</div>
-        <div class="message sent">Olá! Como posso ajudar?</div>
-    </div>
-
-    <form class="input-area" id="msgForm">
-        <input type="text" id="msgInput" placeholder="Digite uma mensagem" required>
-        <button type="submit">➤</button>
-    </form>
-
-    <script>
-        // Lógica simples para mostrar a mensagem na tela sem recarregar (Simulação)
-        const form = document.getElementById('msgForm');
-        const input = document.getElementById('msgInput');
-        const chat = document.getElementById('chat');
-
-        form.onsubmit = (e) => {
-            e.preventDefault();
-            if (input.value.trim()) {
-                const div = document.createElement('div');
-                div.className = 'message sent';
-                div.textContent = input.value;
-                chat.appendChild(div);
-                input.value = '';
-                window.scrollTo(0, document.body.scrollHeight);
-            }
-        };
-    </script>
-</body>
-</html>
+        chat.appendChild(div);
+        window.scrollTo(0, document.body.scrollHeight); // Auto-scroll
+    });
+</script>
