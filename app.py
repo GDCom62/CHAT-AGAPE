@@ -4,6 +4,8 @@ from flask_socketio import SocketIO, emit, join_room
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['SECRET_KEY'] = 'chave_mestra'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 socketio = SocketIO(app, cors_allowed_origins="*")
