@@ -1,12 +1,13 @@
+import os
 from flask import Flask, render_template, request
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'zap_secret'
+app.config['SECRET_KEY'] = 'chave_secreta_whatsapp'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Dicionário para guardar: { 'nome_da_sala': ['User1', 'User2'] }
-users_online = {}
+# Armazena usuários: { room: { sid: username } }
+rooms_users = {}
 
 @app.route('/')
 def index():
@@ -16,25 +17,35 @@ def index():
 
 @socketio.on('join')
 def on_join(data):
-    user = data['user']
+    username = data['user']
     room = data['room']
+    sid = request.sid
+    
     join_room(room)
     
-    # Adiciona usuário à lista da sala
-    if room not in users_online:
-        users_online[room] = []
-    if user not in users_online[room]:
-        users_online[room].append(user)
+    if room not in rooms_users:
+        rooms_users[room] = {}
     
-    # Avisa a sala para atualizar a lista visual
-    emit('update_users', users_online[room], to=room)
-    print(f"{user} online em {room}")
+    rooms_users[room][sid] = username
+    
+    # Envia a lista atualizada de nomes (sem duplicados) para a sala
+    current_users = list(set(rooms_users[room].values()))
+    emit('update_users', current_users, to=room)
 
 @socketio.on('disconnect')
 def on_disconnect():
-    # Lógica simples para remover (em apps reais usaríamos o SID)
-    # Para este exemplo, o ideal é atualizar ao sair da página
-    pass
+    sid = request.sid
+    for room, users in rooms_users.items():
+        if sid in users:
+            del users[sid]
+            current_users = list(set(users.values()))
+            emit('update_users', current_users, to=room)
+            break
+
+@socketio.on('send_message')
+def handle_message(data):
+    emit('receive_message', data, to=data['room'])
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, debug=True)
