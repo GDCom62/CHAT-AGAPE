@@ -1,9 +1,12 @@
 from flask import Flask, render_template, request
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'chave_secreta'
+app.config['SECRET_KEY'] = 'zap_secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Dicionário para guardar: { 'nome_da_sala': ['User1', 'User2'] }
+users_online = {}
 
 @app.route('/')
 def index():
@@ -11,20 +14,27 @@ def index():
     room = request.args.get('room', 'Geral')
     return render_template('chat.html', user=user, room=room)
 
-# Evento para entrar na sala
 @socketio.on('join')
 def on_join(data):
-    username = data['user']
+    user = data['user']
     room = data['room']
-    join_room(room) # Coloca o usuário na sala específica
-    print(f"{username} entrou na sala {room}")
+    join_room(room)
+    
+    # Adiciona usuário à lista da sala
+    if room not in users_online:
+        users_online[room] = []
+    if user not in users_online[room]:
+        users_online[room].append(user)
+    
+    # Avisa a sala para atualizar a lista visual
+    emit('update_users', users_online[room], to=room)
+    print(f"{user} online em {room}")
 
-# Enviar mensagem apenas para a sala correta
-@socketio.on('send_message')
-def handle_message(data):
-    room = data['room']
-    # O parâmetro 'to' garante que só quem está na sala receba
-    emit('receive_message', data, to=room)
+@socketio.on('disconnect')
+def on_disconnect():
+    # Lógica simples para remover (em apps reais usaríamos o SID)
+    # Para este exemplo, o ideal é atualizar ao sair da página
+    pass
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
