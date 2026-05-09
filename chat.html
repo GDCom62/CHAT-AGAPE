@@ -1,148 +1,107 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Python Clone</title>
-    <!-- Scripts Necessários -->
+    <title>WhatsApp Pro</title>
     <script src="https://cloudflare.com"></script>
     <script src='https://jit.si'></script>
-    
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        body { background-color: #e5ddd5; height: 100vh; display: flex; flex-direction: column; }
-
-        /* Cabeçalho */
-        .header { background-color: #075e54; color: white; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; height: 65px; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .header h3 { font-size: 18px; }
+        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #e5ddd5; }
+        /* BARRA DE BOTÕES DE ACESSO RÁPIDO NO TOPO */
+        .tools { background: #075e54; padding: 10px; display: flex; gap: 10px; justify-content: center; }
+        .btn-tool { padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
         
-        .btn-video { background: #25d366; color: white; border: none; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; }
-
-        /* Lista Online */
-        .online-bar { background: #f6f6f6; padding: 8px 15px; font-size: 13px; border-bottom: 1px solid #ddd; overflow-x: auto; white-space: nowrap; }
-        .user-tag { background: #128c7e; color: white; padding: 2px 10px; border-radius: 12px; margin-right: 5px; display: inline-block; }
-
-        /* Janela de Chat */
-        #chat-window { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; background-image: url('https://githubusercontent.com'); }
+        #chat { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 8px; border-radius: 5px; max-width: 70%; font-size: 14px; box-shadow: 0 1px 1px gray; }
+        .sent { background: #dcf8c6; align-self: flex-end; }
+        .received { background: white; align-self: flex-start; }
         
-        .msg { max-width: 75%; padding: 8px 12px; border-radius: 8px; font-size: 14.5px; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); line-height: 1.5; }
-        .msg small { display: block; font-weight: bold; font-size: 11px; margin-bottom: 3px; }
-        
-        .received { background: white; align-self: flex-start; border-top-left-radius: 0; }
-        .sent { background: #dcf8c6; align-self: flex-end; border-top-right-radius: 0; }
-
-        /* Rodapé */
         .footer { background: #f0f0f0; padding: 10px; display: flex; align-items: center; gap: 10px; }
-        .footer input[type="text"] { flex: 1; padding: 12px 18px; border: none; border-radius: 25px; outline: none; font-size: 15px; }
-        
-        .btn-attach { cursor: pointer; font-size: 24px; color: #51585c; padding: 5px; }
-        .btn-send { background: #075e54; color: white; border: none; width: 45px; height: 45px; border-radius: 50%; cursor: pointer; font-size: 20px; }
-
-        /* Container de Vídeo Fullscreen */
-        #video-container { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; z-index: 9999; }
-        .btn-close-video { position: absolute; top: 20px; right: 20px; z-index: 10000; background: #ff2e2e; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        input { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #ccc; }
+        #video-ui { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:black; z-index:999; }
     </style>
 </head>
 <body>
 
-    <!-- Tela de Vídeo Oculta -->
-    <div id="video-container">
-        <button class="btn-close-video" onclick="stopVideo()">ENCERRAR CHAMADA</button>
-        <div id="meet-iframe" style="height: 100%;"></div>
-    </div>
+<div id="video-ui">
+    <button onclick="stopVideo()" style="position:absolute; top:10px; right:10px; z-index:1000; padding:15px; background:red; color:white;">DESLIGAR</button>
+    <div id="meet" style="height:100%"></div>
+</div>
 
-    <!-- Cabeçalho -->
-    <div class="header">
-        <div>
-            <h3>Sala: {{ room }}</h3>
-            <small>Você: {{ user }}</small>
-        </div>
-        <button class="btn-video" onclick="startVideo()">📹 INICIAR VÍDEO</button>
-    </div>
+<div class="tools">
+    <button class="btn-tool" style="background: #34b7f1;" onclick="startVideo()">📹 ABRIR VÍDEO</button>
+    <label class="btn-tool" style="background: #ff5722; cursor:pointer;">
+        📎 ANEXAR <input type="file" id="file-in" style="display:none" onchange="sendFile()">
+    </label>
+    <button id="btn-mic" class="btn-tool" style="background: #25d366;" onclick="toggleAudio()">🎤 GRAVAR ÁUDIO</button>
+</div>
 
-    <div class="online-bar" id="userList">Online: </div>
+<div id="chat"></div>
 
-    <!-- Chat -->
-    <div id="chat-window"></div>
+<form class="footer" onsubmit="sendText(event)">
+    <input type="text" id="minput" placeholder="Mensagem...">
+    <button type="submit" style="background:#075e54; color:white; border-radius:50%; width:40px; height:40px; border:none;">➤</button>
+</form>
 
-    <!-- Rodapé -->
-    <form class="footer" id="chat-form">
-        <label class="btn-attach" title="Anexar Arquivo">
-            📎 <input type="file" id="file-input" style="display:none" onchange="sendFile()">
-        </label>
-        <input type="text" id="msg-input" placeholder="Digite uma mensagem" autocomplete="off">
-        <button type="submit" class="btn-send">➤</button>
-    </form>
+<script>
+const socket = io();
+const user = "{{user}}", room = "{{room}}";
+let mediaRecorder, audioChunks = [];
 
-    <script>
-        const socket = io();
-        const user = "{{ user }}";
-        const room = "{{ room }}";
-        const chatWindow = document.getElementById('chat-window');
-        let jitsiApi = null;
+socket.emit('join', {user, room});
 
-        // Entrar na sala
-        socket.emit('join', { user, room });
+socket.on('receive_message', (d) => {
+    const div = document.createElement('div');
+    div.className = `msg ${d.user === user ? 'sent' : 'received'}`;
+    div.innerHTML = `<b>${d.user}:</b><br>${d.msg}`;
+    document.getElementById('chat').appendChild(div);
+    document.getElementById('chat').scrollTop = 99999;
+});
 
-        // Função para mostrar mensagem
-        function renderMessage(data) {
-            const div = document.createElement('div');
-            const isMe = data.user === user;
-            div.className = `msg ${isMe ? 'sent' : 'received'}`;
-            div.innerHTML = `<small style="color:${isMe?'#075e54':'#128c7e'}">${data.user}</small> ${data.msg}`;
-            chatWindow.appendChild(div);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-        }
+socket.on('load_history', (data) => data.forEach(d => socket.emit('receive_message', d)));
 
-        // Eventos Socket
-        socket.on('load_history', (msgs) => { chatWindow.innerHTML = ''; msgs.forEach(renderMessage); });
-        socket.on('receive_message', renderMessage);
-        socket.on('update_users', (users) => {
-            document.getElementById('userList').innerHTML = 'Online: ' + users.map(u => `<span class="user-tag">${u}</span>`).join('');
-        });
+function sendText(e) {
+    e.preventDefault();
+    const i = document.getElementById('minput');
+    if(i.value) { socket.emit('send_message', {user, room, msg: i.value}); i.value=''; }
+}
 
-        // Envio de Texto
-        document.getElementById('chat-form').onsubmit = (e) => {
-            e.preventDefault();
-            const input = document.getElementById('msg-input');
-            if(input.value.trim()) {
-                socket.emit('send_message', { user, room, msg: input.value });
-                input.value = '';
-            }
+async function sendFile() {
+    const f = document.getElementById('file-in').files[0];
+    const fd = new FormData(); fd.append('file', f);
+    const res = await fetch('/upload', {method:'POST', body:fd});
+    const d = await res.json();
+    socket.emit('send_message', {user, room, msg: `<a href="${d.url}" target="_blank">📄 Arquivo: ${d.name}</a>`});
+}
+
+function startVideo() {
+    document.getElementById('video-ui').style.display = 'block';
+    new JitsiMeetExternalAPI("meet.jit.si", { roomName: "Room"+room, parentNode: document.querySelector('#meet'), userInfo: {displayName: user} });
+}
+
+function stopVideo() { location.reload(); }
+
+// FUNÇÃO DE ÁUDIO
+async function toggleAudio() {
+    const btn = document.getElementById('btn-mic');
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/ogg' });
+            const fd = new FormData(); fd.append('file', new File([blob], "audio.ogg"));
+            const res = await fetch('/upload', {method:'POST', body:fd});
+            const d = await res.json();
+            socket.emit('send_message', {user, room, msg: `<audio controls src="${d.url}"></audio>`});
+            audioChunks = [];
         };
-
-        // Envio de Arquivo
-        async function sendFile() {
-            const fileInput = document.getElementById('file-input');
-            if (!fileInput.files.length) return;
-
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-
-            const res = await fetch('/upload', { method: 'POST', body: formData });
-            const data = await res.json();
-            
-            const fileLink = `<a href="${data.url}" target="_blank" style="color:#075e54; font-weight:bold;">📄 Arquivo: ${data.name}</a>`;
-            socket.emit('send_message', { user, room, msg: fileLink });
-            fileInput.value = ''; // limpa o input
-        }
-
-        // Videoconferência
-        function startVideo() {
-            document.getElementById('video-container').style.display = 'block';
-            const domain = "meet.jit.si";
-            const options = {
-                roomName: "PythonZap_" + room.replace(/\s/g, '_'),
-                parentNode: document.querySelector('#meet-iframe'),
-                userInfo: { displayName: user }
-            };
-            jitsiApi = new JitsiMeetExternalAPI(domain, options);
-        }
-
-        function stopVideo() {
-            if(jitsiApi) jitsiApi.dispose();
-            document.getElementById('video-container').style.display = 'none';
-        }
-    </script>
+        mediaRecorder.start();
+        btn.style.background = "red"; btn.innerText = "🛑 PARAR";
+    } else {
+        mediaRecorder.stop();
+        btn.style.background = "#25d366"; btn.innerText = "🎤 GRAVAR ÁUDIO";
+    }
+}
+</script>
 </body>
 </html>
