@@ -1,41 +1,22 @@
-<!-- Dentro do <head>, adicione o script do Socket.IO -->
-<script src="https://cloudflare.com"></script>
+const socket = io();
+const currentUser = "{{ user }}";
+const currentRoom = "{{ room }}";
 
-<!-- Substitua o seu <script> atual por este: -->
-<script>
-    const socket = io(); // Conecta ao servidor
-    const form = document.getElementById('msgForm');
-    const input = document.getElementById('msgInput');
-    const chat = document.getElementById('chat');
-    
-    // Pega o nome do usuário que o Flask passou
-    const currentUser = "{{ user }}";
+// Assim que conectar, pede para entrar na sala
+socket.on('connect', () => {
+    socket.emit('join', { user: currentUser, room: currentRoom });
+});
 
-    // Enviar mensagem para o servidor
-    form.onsubmit = (e) => {
-        e.preventDefault();
-        const text = input.value.trim();
-        if (text) {
-            socket.emit('send_message', {
-                user: currentUser,
-                msg: text
-            });
-            input.value = '';
-        }
-    };
-
-    // Receber mensagem do servidor e mostrar na tela
-    socket.on('receive_message', (data) => {
-        const div = document.createElement('div');
-        
-        // Se o nome for o meu, balão verde (sent), se não, balão branco (received)
-        const isMe = data.user === currentUser;
-        div.className = `message ${isMe ? 'sent' : 'received'}`;
-        
-        // Adiciona o nome de quem enviou antes da mensagem (estilo grupo)
-        div.innerHTML = `<small style="display:block; color: #075e54; font-weight:bold;">${data.user}</small>${data.msg}`;
-        
-        chat.appendChild(div);
-        window.scrollTo(0, document.body.scrollHeight); // Auto-scroll
-    });
-</script>
+form.onsubmit = (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (text) {
+        // Agora enviamos também o nome da sala
+        socket.emit('send_message', {
+            user: currentUser,
+            room: currentRoom,
+            msg: text
+        });
+        input.value = '';
+    }
+};
