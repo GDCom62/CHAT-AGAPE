@@ -1,69 +1,112 @@
 import os
 import json
 import datetime
-from flask import Flask, render_template, request, url_for, send_from_directory
+import redis
+from flask import Flask, render_template, request, url_for, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
-import redis
 
 app = Flask(__name__)
 app.secret_key = 'agape_secret_key_123'
 
-# Configuração de Upload
+# --- CONFIGURAÇÃO DE UPLOAD ---
 UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Redis
-REDIS_URL = os.environ.get('REDIS_URL', 'sua_url_aqui')
-r = redis.from_url(REDIS_URL, decode_responses=True)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# --- CONFIGURAÇÃO DO REDIS ---
+# O Railway lerá automaticamente da aba "Variables"
+REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
+
+try:
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    r.ping()
+    print("✅ Conectado ao Redis com sucesso!")
+except Exception as e:
+    print(f"❌ Erro ao conectar no Redis: {e}")
+    r = None
+
+# --- INICIALIZAÇÃO DO SOCKETIO ---
+# Forçamos o gevent para evitar conflitos no Railway
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+
+# --- ROTAS ---
 
 @app.route('/')
 def index():
     user = request.args.get('user', 'Irmão')
     room = request.args.get('room', 'Geral')
-    history_raw = r.lrange(f"chat:{room}", 0, -1)
-    history = [json.loads(m) for m in history_raw]
+    
+    history = []
+    if r:
+        try:
+            # Busca as últimas 50 mensagens
+            history_raw = r.lrange(f"chat:{room}", 0, -1)
+            history = [json.loads(m) for m in history_raw]
+        except Exception as e:
+            print(f"Erro ao buscar histórico: {e}")
+            
     return render_template('chat.html', user=user, room=room, history=history)
 
-# Rota para servir os arquivos enviados
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# Rota para processar o upload
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    file = request.files['file']
-    user = request.form.get('user')
-    room = request.form.get('room')
+    if 'file' not in request.files:
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
     
-    if file:
-        filename = secure_filename(f"{datetime.datetime.now().timestamp()}_{file.filename}")
+    file = request.files['file']
+    user = request.form.get('user', 'Anônimo')
+    room = request.form.get('room', 'Geral')
+    
+    if file and file.filename != '':
+        filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        file_url = url_for('uploaded_file', filename=filename)
         
+        file_url = url_for('uploaded_file', filename=filename, _external=True)
+        
+        # O link do arquivo vai como mensagem de texto formatada em HTML
         payload = {
             "user": user,
-            "text": f'<a href="{file_url}" target="_blank">📎 Arquivo: {file.filename}</a>',
-            "time": datetime.datetime.now().strftime("%H:%M"),
-            "is_file": True
+            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#007bff; font-weight:bold;">Arquivo: {file.filename}</a>',
+            "time": datetime.datetime.now().strftime("%H:%M")
         }
-        r.rpush(f"chat:{room}", json.dumps(payload))
+        
+        if r:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+            r.ltrim(f"chat:{room}", -50, -1)
+            
         socketio.emit('receive_message', payload)
-        return {"status": "ok"}
+        return jsonify({"status": "success", "url": file_url})
+    
+    return jsonify({"error": "Erro no processamento"}), 400
+
+# --- EVENTOS SOCKET.IO ---
 
 @socketio.on('send_message')
 def handle_message(data):
     room = data.get('room', 'Geral')
     payload = {
-        "user": data.get('user'),
+        "user": data.get('user', 'Anônimo'),
         "text": data.get('message'),
         "time": datetime.datetime.now().strftime("%H:%M")
     }
-    r.rpush(f"chat:{room}", json.dumps(payload))
+    
+    if r:
+        try:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+            r.ltrim(f"chat:{room}", -50, -1)
+        except Exception as e:
+            print(f"Erro ao salvar mensagem: {e}")
+            
     emit('receive_message', payload, broadcast=True)
 
+# --- INICIALIZAÇÃO DO SERVIDOR ---
+
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    # No Railway, o socketio.run gerencia o servidor gevent corretamente
+    socketio.run(app, host='0.0.0.0', port=port)
