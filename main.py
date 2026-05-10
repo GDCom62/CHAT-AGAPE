@@ -6,28 +6,32 @@ from flask import Flask, render_template, request, url_for, send_from_directory,
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
+# Força o Flask a encontrar a pasta templates no caminho correto
+base_dir = os.path.abspath(os.path.dirname(__file__))
+template_dir = os.path.join(base_dir, 'templates')
+
+app = Flask(__name__, template_folder=template_dir)
 app.secret_key = 'agape_secret_key_123'
 
-# Configuração de Upload de Arquivos
-UPLOAD_FOLDER = 'uploads'
+# --- CONFIGURAÇÃO DE UPLOAD ---
+UPLOAD_FOLDER = os.path.join(base_dir, 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Configuração do Redis com tratamento de erro
+# --- CONFIGURAÇÃO DO REDIS ---
 REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 
 try:
     r = redis.from_url(REDIS_URL, decode_responses=True)
-    # Teste de conexão simples
     r.ping()
-    print("CONEXÃO REDIS: OK")
+    print("✅ REDIS: Conectado com sucesso!")
 except Exception as e:
-    print(f"ERRO REDIS: {e}")
+    print(f"❌ REDIS ERRO: {e}")
     r = None
 
-# Inicializa o SocketIO com gevent
+# --- INICIALIZAÇÃO DO SOCKETIO ---
+# Usamos gevent para compatibilidade total com Railway
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 @app.route('/')
@@ -35,15 +39,18 @@ def index():
     user = request.args.get('user', 'Irmão')
     room = request.args.get('room', 'Geral')
     
+    # Verifica se o arquivo existe antes de renderizar para evitar erro 500
+    if not os.path.exists(os.path.join(template_dir, 'chat.html')):
+        return f"Erro: Arquivo chat.html não encontrado em {template_dir}", 404
+
     history = []
-    # Tenta buscar histórico se o Redis estiver ativo
     if r:
         try:
             history_raw = r.lrange(f"chat:{room}", 0, -1)
             history = [json.loads(m) for m in history_raw]
         except Exception as e:
-            print(f"Erro ao ler histórico: {e}")
-    
+            print(f"Erro histórico: {e}")
+            
     return render_template('chat.html', user=user, room=room, history=history)
 
 @app.route('/uploads/<filename>')
@@ -53,7 +60,7 @@ def uploaded_file(filename):
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({"error": "Sem arquivo"}), 400
+        return jsonify({"error": "No file"}), 400
     
     file = request.files['file']
     user = request.form.get('user', 'Anônimo')
@@ -67,7 +74,7 @@ def upload_file():
         
         payload = {
             "user": user,
-            "text": f'📎 <a href="{file_url}" target="_blank">Arquivo: {file.filename}</a>',
+            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#007bff;font-weight:bold;">Arquivo: {file.filename}</a>',
             "time": datetime.datetime.now().strftime("%H:%M")
         }
         
@@ -77,7 +84,7 @@ def upload_file():
         socketio.emit('receive_message', payload)
         return jsonify({"status": "success", "url": file_url})
     
-    return jsonify({"error": "Falha no upload"}), 400
+    return jsonify({"error": "Upload failed"}), 400
 
 @socketio.on('send_message')
 def handle_message(data):
@@ -93,11 +100,12 @@ def handle_message(data):
             r.rpush(f"chat:{room}", json.dumps(payload))
             r.ltrim(f"chat:{room}", -50, -1)
         except Exception as e:
-            print(f"Erro ao salvar no Redis: {e}")
+            print(f"Erro Redis Save: {e}")
     
     emit('receive_message', payload, broadcast=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    # Rodar diretamente com socketio para garantir compatibilidade no Railway
+    # No Railway, o comando de inicialização via painel ou Procfile é quem manda,
+    # mas deixamos o socketio.run aqui para testes locais.
     socketio.run(app, host='0.0.0.0', port=port)
