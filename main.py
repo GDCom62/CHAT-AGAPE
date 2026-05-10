@@ -15,11 +15,19 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Configuração do Redis (Railway pegará da variável de ambiente)
-REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:sua_senha_aqui@calm-kangaroo-116623.upstash.io:6379')
-r = redis.from_url(REDIS_URL, decode_responses=True)
+# Configuração do Redis com tratamento de erro
+REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 
-# Inicializa o SocketIO com gevent (para evitar o erro do eventlet)
+try:
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    # Teste de conexão simples
+    r.ping()
+    print("CONEXÃO REDIS: OK")
+except Exception as e:
+    print(f"ERRO REDIS: {e}")
+    r = None
+
+# Inicializa o SocketIO com gevent
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 @app.route('/')
@@ -27,34 +35,31 @@ def index():
     user = request.args.get('user', 'Irmão')
     room = request.args.get('room', 'Geral')
     
-    # Busca histórico do Redis
-    try:
-        history_raw = r.lrange(f"chat:{room}", 0, -1)
-        history = [json.loads(m) for m in history_raw]
-    except:
-        history = []
-        
+    history = []
+    # Tenta buscar histórico se o Redis estiver ativo
+    if r:
+        try:
+            history_raw = r.lrange(f"chat:{room}", 0, -1)
+            history = [json.loads(m) for m in history_raw]
+        except Exception as e:
+            print(f"Erro ao ler histórico: {e}")
+    
     return render_template('chat.html', user=user, room=room, history=history)
 
-# Rota para baixar/visualizar arquivos anexados
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# Rota para processar o upload do arquivo
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({"error": "No file"}), 400
+        return jsonify({"error": "Sem arquivo"}), 400
     
     file = request.files['file']
-    user = request.form.get('user')
-    room = request.form.get('room')
+    user = request.form.get('user', 'Anônimo')
+    room = request.form.get('room', 'Geral')
     
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-
-    if file:
+    if file and file.filename != '':
         filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         
@@ -62,35 +67,37 @@ def upload_file():
         
         payload = {
             "user": user,
-            "text": f'📎 <a href="{file_url}" target="_blank" style="color: #007bff;">Arquivo: {file.filename}</a>',
+            "text": f'📎 <a href="{file_url}" target="_blank">Arquivo: {file.filename}</a>',
             "time": datetime.datetime.now().strftime("%H:%M")
         }
         
-        # Salva no Redis e avisa o chat
-        r.rpush(f"chat:{room}", json.dumps(payload))
-        socketio.emit('receive_message', payload)
+        if r:
+            r.rpush(f"chat:{room}", json.dumps(payload))
         
+        socketio.emit('receive_message', payload)
         return jsonify({"status": "success", "url": file_url})
+    
+    return jsonify({"error": "Falha no upload"}), 400
 
-# Evento de recebimento de mensagem via SocketIO
 @socketio.on('send_message')
 def handle_message(data):
     room = data.get('room', 'Geral')
     payload = {
-        "user": data.get('user'),
+        "user": data.get('user', 'Anônimo'),
         "text": data.get('message'),
         "time": datetime.datetime.now().strftime("%H:%M")
     }
     
-    r.rpush(f"chat:{room}", json.dumps(payload))
-    r.ltrim(f"chat:{room}", -50, -1)
+    if r:
+        try:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+            r.ltrim(f"chat:{room}", -50, -1)
+        except Exception as e:
+            print(f"Erro ao salvar no Redis: {e}")
     
     emit('receive_message', payload, broadcast=True)
 
 if __name__ == '__main__':
-    import os
-    # O Railway fornece a porta na variável PORT
     port = int(os.environ.get("PORT", 5000))
-    # Usando log_output=True para ajudar a gente a ver erros
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
-
+    # Rodar diretamente com socketio para garantir compatibilidade no Railway
+    socketio.run(app, host='0.0.0.0', port=port)
