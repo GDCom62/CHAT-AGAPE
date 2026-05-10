@@ -88,5 +88,9 @@ def handle_message(data):
     emit('receive_message', payload, broadcast=True)
 
 if __name__ == '__main__':
+    import os
+    # O Railway fornece a porta na variável PORT
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host='0.0.0.0', port=port)
+    # Usando log_output=True para ajudar a gente a ver erros
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
