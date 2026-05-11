@@ -1,76 +1,103 @@
-import streamlit as st
-import pandas as pd
-from sqlalchemy import create_engine, text
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-import os, base64, json
+import os
+import json
+import datetime
+import redis
+from flask import Flask, render_template, request, url_for, send_from_directory, jsonify
+from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 
-# --- 1. CONFIGURAÇÕES ---
-st.set_page_config(page_title="Portal Ágape", layout="wide", page_icon="⛪")
+# Configuração de caminhos para o Railway
+base_dir = os.path.abspath(os.path.dirname(__file__))
+template_dir = os.path.join(base_dir, 'templates')
 
-URL_CHAT_RAILWAY = "https://railway.app"
+app = Flask(__name__, template_folder=template_dir)
+app.secret_key = 'agape_secret_key_123'
 
-def aplicar_estilo_facebook():
-    st.markdown("""
-        <style>
-        .stApp { background-color: #f0f2f5; }
-        .chat-container { border-radius: 15px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-        </style>
-    """, unsafe_allow_html=True)
+# Configuração de Upload de Arquivos
+UPLOAD_FOLDER = os.path.join(base_dir, 'uploads')
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# --- 2. BANCO DE DADOS ---
-engine = create_engine("sqlite:///agape_v60.db", pool_pre_ping=True)
+# Configuração do Redis (Variável de ambiente do Railway)
+REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 
-# MUDANÇA AQUI: params=None (sem chaves)
-def executar_query(sql, params=None):
-    if params is None:
-        params = {}
-    with engine.begin() as conn:
-        conn.execute(text(sql), params)
+try:
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    r.ping()
+    print("✅ Conectado ao Redis!")
+except Exception as e:
+    print(f"❌ Erro Redis: {e}")
+    r = None
 
-def consultar_db(sql, params=None):
-    if params is None:
-        params = {}
-    with engine.connect() as conn:
-        return pd.read_sql_query(text(sql), conn, params=params)
+# Inicializa o SocketIO com Gevent (Modo assíncrono compatível)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
-def init_db():
-    executar_query('CREATE TABLE IF NOT EXISTS membros (id INTEGER PRIMARY KEY, nome TEXT, email TEXT UNIQUE, codigo TEXT, senha TEXT, is_admin INTEGER)')
-    executar_query('CREATE TABLE IF NOT EXISTS oracoes (id INTEGER PRIMARY KEY, nome TEXT, pedido TEXT, status TEXT, data TEXT)')
-    if consultar_db("SELECT id FROM membros WHERE email='admin@agape.com'").empty:
-        pw = generate_password_hash('Agape2026')
-        executar_query("INSERT INTO membros (nome, email, codigo, senha, is_admin) VALUES ('Admin', 'admin@agape.com', 'ADM-000', :pw, 1)", {"pw": pw})
+@app.route('/logo.png')
+def get_logo():
+    return send_from_directory(base_dir, 'logo.png')
 
-init_db()
-
-# --- 3. LOGICA ---
-if 'logado' not in st.session_state:
-    st.session_state.logado = False
-
-if not st.session_state.logado:
-    aplicar_estilo_facebook()
-    st.title("Portal Ágape")
-    with st.form("login"):
-        e = st.text_input("E-mail")
-        s = st.text_input("Senha", type="password")
-        if st.form_submit_button("Entrar"):
-            res = consultar_db("SELECT * FROM membros WHERE email=:e", {"e":e})
-            if not res.empty and check_password_hash(res.iloc[0]['senha'], s):
-                st.session_state.update({"logado": True, "user": res.iloc[0].to_dict()})
-                st.rerun()
-            st.error("Erro no login")
-else:
-    u = st.session_state.user
-    aplicar_estilo_facebook()
-    menu = st.sidebar.radio("Menu", ["Feed", "Chat Online"])
+@app.route('/')
+def index():
+    user = request.args.get('user', 'Irmão')
+    room = request.args.get('room', 'Geral')
     
-    if menu == "Chat Online":
-        st.title("💬 Chat Comunitário")
-        link = f"{URL_CHAT_RAILWAY}?user={u['nome']}&room=Geral"
-        st.markdown(f'<iframe src="{link}" width="100%" height="700px" allow="camera; microphone" style="border:none;"></iframe>', unsafe_allow_html=True)
-    else:
-        st.write(f"Bem-vindo, {u['nome']}!")
-        if st.sidebar.button("Sair"):
-            st.session_state.clear()
-            st.rerun()
+    history = []
+    if r:
+        try:
+            history_raw = r.lrange(f"chat:{room}", 0, -1)
+            history = [json.loads(m) for m in history_raw]
+        except:
+            history = []
+            
+    return render_template('chat.html', user=user, room=room, history=history)
 
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file"}), 400
+    
+    file = request.files['file']
+    user = request.form.get('user', 'Anônimo')
+    room = request.form.get('room', 'Geral')
+    
+    if file and file.filename != '':
+        filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        file_url = url_for('uploaded_file', filename=filename, _external=True)
+        
+        payload = {
+            "user": user,
+            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#818cf8; font-weight:bold;">Arquivo Enviado</a>',
+            "time": datetime.datetime.now().strftime("%H:%M")
+        }
+        
+        if r:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+        
+        socketio.emit('receive_message', payload)
+        return jsonify({"status": "success", "url": file_url})
+    return jsonify({"error": "fail"}), 400
+
+@socketio.on('send_message')
+def handle_message(data):
+    room = data.get('room', 'Geral')
+    payload = {
+        "user": data.get('user', 'Anônimo'),
+        "text": data.get('message'),
+        "time": datetime.datetime.now().strftime("%H:%M")
+    }
+    if r:
+        try:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+            r.ltrim(f"chat:{room}", -50, -1)
+        except: pass
+    emit('receive_message', payload, broadcast=True)
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8080))
+    socketio.run(app, host='0.0.0.0', port=port)
