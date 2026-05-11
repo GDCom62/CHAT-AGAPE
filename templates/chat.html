@@ -3,135 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZapRedis Clone</title>
+    <title>Chat Ágape Pro</title>
+    <script src="https://cloudflare.com"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #e5ddd5; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        header { background: #075e54; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        
+        body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; background: #f0f2f5; }
+        #video-container { width: 40%; background: #000; display: none; border-right: 2px solid #ccc; }
+        #chat-container { flex: 1; display: flex; flex-direction: column; }
         #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        <!-- No final do chat-box, adicione o elemento de áudio -->
-<audio id="notif-sound" src="https://mixkit.co" preload="auto"></audio>
-
-<script>
-    const chatBox = document.getElementById('chat-box');
-    const sound = document.getElementById('notif-sound');
-    const room = "{{ room }}";
-
-    const source = new EventSource(`/stream/${room}`);
-    
-    source.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        if (data.status) return;
-
-        const div = document.createElement('div');
-        const isMine = data.user === "{{ user }}";
-        div.className = `msg ${isMine ? 'mine' : 'others'}`;
-
-        // Lógica de Imagem vs Texto
-        let content = data.text;
-        if (data.type === 'image') {
-            content = `<img src="${data.text}" style="max-width:100%; border-radius:5px; margin-top:5px;">`;
-        }
-
-        div.innerHTML = `
-            ${!isMine ? `<span class="user">${data.user}</span>` : ''}
-            ${content}
-            <span class="time">${data.time}</span>
-        `;
-        
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
-
-        // Toca som se for mensagem de outro usuário
-        if (!isMine) sound.play().catch(e => console.log("Som bloqueado pelo navegador"));
-    };
-    
-    // Ao enviar, inclua o nome da sala no FormData
-    document.getElementById('msg-form').onsubmit = function(e) {
-        e.preventDefault();
-        const input = document.getElementById('msg-input');
-        const formData = new FormData();
-        formData.append('message', input.value);
-        formData.append('room', room); // IMPORTANTE
-        fetch('/post', { method: 'POST', body: formData });
-        input.value = '';
-    };
-</script>
-
-        .msg { max-width: 70%; padding: 8px 12px; border-radius: 10px; position: relative; font-size: 14px; line-height: 1.4; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
-        .mine { align-self: flex-end; background: #dcf8c6; border-top-right-radius: 0; }
-        .others { align-self: flex-start; background: white; border-top-left-radius: 0; }
-        
-        .user { font-weight: bold; font-size: 0.75em; display: block; color: #075e54; margin-bottom: 2px; }
-        .time { font-size: 0.65em; color: #999; float: right; margin-top: 5px; margin-left: 10px; }
-
-        footer { background: #f0f0f0; padding: 10px 15px; display: flex; align-items: center; gap: 10px; }
-        input[type="text"] { flex: 1; padding: 12px; border: none; border-radius: 25px; outline: none; font-size: 15px; }
-        button { background: #075e54; color: white; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-        button:hover { background: #128c7e; }
+        .msg { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 80%; }
+        #controls { background: white; padding: 15px; display: flex; gap: 10px; border-top: 1px solid #ddd; align-items: center; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-send { background: #007bff; color: white; }
+        .btn-video { background: #28a745; color: white; }
+        .btn-file { background: #6c757d; color: white; }
+        iframe { width: 100%; height: 100%; border: none; }
     </style>
 </head>
 <body>
 
-<header>
-    <span>ZapRedis - Logado como: <strong>{{ user }}</strong></span>
-    <a href="/logout" style="color: white; font-size: 0.8em;">Sair</a>
-</header>
-
-<div id="chat-box">
-    {% for m in history %}
-        <div class="msg {{ 'mine' if m.user == user else 'others' }}">
-            {% if m.user != user %}<span class="user">{{ m.user }}</span>{% endif %}
-            {{ m.text }}
-            <span class="time">{{ m.time }}</span>
-        </div>
-    {% endfor %}
+<div id="video-container">
+    <div id="jitsi-container" style="height: 100%;"></div>
 </div>
 
-<footer>
-    <form id="msg-form" style="display: flex; width: 100%; gap: 10px;">
-        <input type="text" id="msg-input" placeholder="Digite uma mensagem" autocomplete="off" required>
-        <button type="submit">➤</button>
-    </form>
-</footer>
-
-<script>
-    const chatBox = document.getElementById('chat-box');
-    const currentUser = "{{ user }}";
-
-    // Mantém o chat no final ao carregar
-    chatBox.scrollTop = chatBox.scrollHeight;
-
-    // Conecta ao Stream de eventos (SSE)
-    const source = new EventSource("/stream");
+<div id="chat-container">
+    <h3 style="text-align: center; margin: 10px;">Sala: {{ room }} | Usuário: {{ user }}</h3>
     
-    source.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        if (data.status === "connected") return;
+    <div id="chat-box">
+        {% for m in history %}
+        <div class="msg">
+            <b>{{ m.user }}</b>: {{ m.text|safe }} <br>
+            <small style="color: #888;">{{ m.time }}</small>
+        </div>
+        {% endfor %}
+    </div>
 
+    <div id="controls">
+        <button class="btn-video" onclick="toggleVideo()">📹 Vídeo</button>
+        
+        <input type="file" id="fileInput" style="display: none;" onchange="uploadFile()">
+        <button class="btn-file" onclick="document.getElementById('fileInput').click()">📎</button>
+        
+        <input type="text" id="messageInput" placeholder="Digite uma mensagem..." autocomplete="off">
+        <button class="btn-send" onclick="sendMessage()">Enviar</button>
+    </div>
+</div>
+
+<script src="https://jit.si"></script>
+<script>
+    const socket = io();
+    const user = "{{ user }}";
+    const room = "{{ room }}";
+    let jitsiApi = null;
+
+    // --- FUNÇÃO DE VÍDEO (JITSI) ---
+    function toggleVideo() {
+        const container = document.getElementById('video-container');
+        if (container.style.display === 'none' || container.style.display === '') {
+            container.style.display = 'block';
+            const options = {
+                roomName: "AgapeRoom_" + room,
+                parentNode: document.getElementById('jitsi-container'),
+                userInfo: { displayName: user }
+            };
+            jitsiApi = new JitsiMeetExternalAPI("meet.jit.si", options);
+        } else {
+            container.style.display = 'none';
+            if (jitsiApi) jitsiApi.dispose();
+        }
+    }
+
+    // --- FUNÇÃO DE MENSAGEM ---
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        if (input.value.trim() !== "") {
+            socket.emit('send_message', {
+                user: user,
+                room: room,
+                message: input.value
+            });
+            input.value = "";
+        }
+    }
+
+    // --- FUNÇÃO DE UPLOAD ---
+    async function uploadFile() {
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length === 0) return;
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('user', user);
+        formData.append('room', room);
+
+        // Mostra um aviso visual simples
+        console.log("Enviando arquivo...");
+        
+        try {
+            await fetch('/upload', { method: 'POST', body: formData });
+            fileInput.value = ''; // Limpa o campo
+        } catch (err) {
+            alert("Erro ao enviar arquivo");
+        }
+    }
+
+    // --- RECEBER MENSAGENS ---
+    socket.on('receive_message', (data) => {
+        const chatBox = document.getElementById('chat-box');
         const div = document.createElement('div');
-        const isMine = data.user === currentUser;
-        
-        div.className = `msg ${isMine ? 'mine' : 'others'}`;
-        div.innerHTML = `
-            ${!isMine ? `<span class="user">${data.user}</span>` : ''}
-            ${data.text}
-            <span class="time">${data.time}</span>
-        `;
-        
+        div.className = 'msg';
+        div.innerHTML = `<b>${data.user}</b>: ${data.text} <br><small style="color:#888;">${data.time}</small>`;
         chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
-    };
+    });
 
-    // Envio de mensagem sem recarregar a página
-    document.getElementById('msg-form').onsubmit = function(e) {
-        e.preventDefault();
-        const input = document.getElementById('msg-input');
-        const formData = new FormData();
-        formData.append('message', input.value);
-        
-        fetch('/post', { method: 'POST', body: formData });
-        input.value = '';
+    // Rolar para baixo ao carregar
+    window.onload = () => {
+        const chatBox = document.getElementById('chat-box');
+        chatBox.scrollTop = chatBox.scrollHeight;
     };
 </script>
 
