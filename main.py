@@ -8,7 +8,7 @@ import os, base64, json
 # --- 1. CONFIGURAÇÕES E ESTILO ---
 st.set_page_config(page_title="Portal Ágape", layout="wide", page_icon="⛪")
 
-# URL DO SEU CHAT NO RAILWAY (Ajuste para o seu link real)
+# URL DO SEU CHAT NO RAILWAY
 URL_CHAT_RAILWAY = "https://railway.app"
 
 def aplicar_estilo_facebook():
@@ -28,13 +28,16 @@ def aplicar_estilo_facebook():
 # --- 2. BANCO DE DADOS ---
 engine = create_engine("sqlite:///agape_v60.db", pool_pre_ping=True)
 
+# CORREÇÃO: Usar params=None em vez de {{}}
 def executar_query(sql, params=None):
     if params is None: params = {}
-    with engine.begin() as conn: conn.execute(text(sql), params)
+    with engine.begin() as conn: 
+        conn.execute(text(sql), params)
 
 def consultar_db(sql, params=None):
     if params is None: params = {}
-    with engine.connect() as conn: return pd.read_sql_query(text(sql), conn, params=params)
+    with engine.connect() as conn: 
+        return pd.read_sql_query(text(sql), conn, params=params)
 
 def init_db():
     executar_query('CREATE TABLE IF NOT EXISTS membros (id INTEGER PRIMARY KEY, nome TEXT, email TEXT UNIQUE, codigo TEXT, senha TEXT, is_admin INTEGER)')
@@ -43,7 +46,6 @@ def init_db():
     executar_query('CREATE TABLE IF NOT EXISTS biblia (id INTEGER PRIMARY KEY, livro TEXT, cap INTEGER, ver INTEGER, texto TEXT)')
     executar_query('CREATE TABLE IF NOT EXISTS oracoes (id INTEGER PRIMARY KEY, nome TEXT, pedido TEXT, status TEXT, data TEXT)')
     executar_query('CREATE TABLE IF NOT EXISTS eventos (id INTEGER PRIMARY KEY, titulo TEXT, dia_semana TEXT, hora TEXT)')
-    # Cria admin padrão se não existir
     if consultar_db("SELECT id FROM membros WHERE email='admin@agape.com'").empty:
         pw = generate_password_hash('Agape2026')
         executar_query("INSERT INTO membros (nome, email, codigo, senha, is_admin) VALUES ('Admin', 'admin@agape.com', 'ADM-000', :pw, 1)", {"pw": pw})
@@ -51,7 +53,8 @@ def init_db():
 init_db()
 
 # --- 3. LOGIN ---
-if 'logado' not in st.session_state: st.session_state.logado = False
+if 'logado' not in st.session_state: 
+    st.session_state.logado = False
 
 if not st.session_state.logado:
     aplicar_estilo_facebook()
@@ -59,10 +62,10 @@ if not st.session_state.logado:
     with col_l:
         st.markdown("<h1 style='color:#1877f2; text-align:center;'>Portal Ágape</h1>", unsafe_allow_html=True)
         with st.form("login"):
-            e, s = st.text_input("E-mail"), st.text_input("Senha", type="password")
+            e = st.text_input("E-mail")
+            s = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", use_container_width=True):
                 res = consultar_db("SELECT * FROM membros WHERE email=:e", {"e":e})
-                # CORREÇÃO AQUI: iloc[0] para pegar a primeira linha
                 if not res.empty and check_password_hash(res.iloc[0]['senha'], s):
                     st.session_state.update({"logado": True, "user": res.iloc[0].to_dict()})
                     st.rerun()
@@ -74,35 +77,34 @@ else:
     with st.sidebar:
         if os.path.exists("logo.png"):
             with open("logo.png", "rb") as f:
-                img_data = base64.b64encode(f.read()).decode()
-                st.markdown(f'<p align="center"><img src="data:image/png;base64,{img_data}" width="120"></p>', unsafe_allow_html=True)
+                data_img = base64.b64encode(f.read()).decode()
+                st.markdown(f'<p align="center"><img src="data:image/png;base64,{data_img}" width="120"></p>', unsafe_allow_html=True)
+        
         st.markdown(f"### 👤 {u['nome']}")
         
         label_or = "🙏 Orações"
         if u['is_admin']:
             res_or = consultar_db("SELECT COUNT(*) as total FROM oracoes WHERE status='Pendente'")
-            pendentes = res_or.iloc[0]['total'] if not res_or.empty else 0
+            pendentes = res_or.iloc[0]['total']
             if pendentes > 0: label_or = f"🙏 Orações ({pendentes} 🔴)"
 
         menu = st.radio("Menu", ["🏠 Feed", "📅 Agenda", "📖 Bíblia", label_or, "🤝 Ofertas", "💰 Financeiro", "💬 Chat Online"])
-        if st.button("Sair"): st.session_state.clear(); st.rerun()
+        if st.button("Sair"): 
+            st.session_state.clear()
+            st.rerun()
 
     # --- NAVEGAÇÃO ---
     if menu == "🏠 Feed":
         st.title("Mural da Igreja")
-        # Aqui você pode inserir o código de feed que já tinha...
-        st.write("Bem-vindo ao mural de notícias.")
+        st.write("Bem-vindo ao mural!")
 
     elif menu == "💬 Chat Online":
         st.title("💬 Chat Comunitário Ágape")
-        # Login automático: passa o nome do usuário para o chat no Railway
         link_final = f"{URL_CHAT_RAILWAY}?user={u['nome']}&room=Geral"
         
-        st.info(f"Conectado como: **{u['nome']}**")
+        st.info(f"Conectado como: {u['nome']}")
         st.markdown(f"""
             <div class="chat-container">
                 <iframe src="{link_final}" width="100%" height="750px" allow="camera; microphone; display-capture; autoplay; clipboard-write" style="border:none;"></iframe>
             </div>
         """, unsafe_allow_html=True)
-
-    # ... (Restante dos menus: Agenda, Bíblia, etc., conforme seu código original)
