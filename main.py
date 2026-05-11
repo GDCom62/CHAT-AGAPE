@@ -28,7 +28,7 @@ def aplicar_estilo_facebook():
 # --- 2. BANCO DE DADOS ---
 engine = create_engine("sqlite:///agape_v60.db", pool_pre_ping=True)
 
-# CORREÇÃO DEFINITIVA: params=None evita o erro de "unhashable type"
+# CORREÇÃO: Usar params=None para evitar erro de 'unhashable type dict'
 def executar_query(sql, params=None):
     if params is None: params = {}
     with engine.begin() as conn: 
@@ -47,6 +47,7 @@ def init_db():
     executar_query('CREATE TABLE IF NOT EXISTS oracoes (id INTEGER PRIMARY KEY, nome TEXT, pedido TEXT, status TEXT, data TEXT)')
     executar_query('CREATE TABLE IF NOT EXISTS eventos (id INTEGER PRIMARY KEY, titulo TEXT, dia_semana TEXT, hora TEXT)')
     
+    # Cria admin padrão
     if consultar_db("SELECT id FROM membros WHERE email='admin@agape.com'").empty:
         pw = generate_password_hash('Agape2026')
         executar_query("INSERT INTO membros (nome, email, codigo, senha, is_admin) VALUES ('Admin', 'admin@agape.com', 'ADM-000', :pw, 1)", {"pw": pw})
@@ -67,7 +68,7 @@ if not st.session_state.logado:
             s = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar", use_container_width=True):
                 res = consultar_db("SELECT * FROM membros WHERE email=:e", {"e":e})
-                # Ajustado para pegar a primeira linha (iloc[0]) corretamente
+                # CORREÇÃO: Acesso via iloc[0] para evitar erros de Series/DataFrame
                 if not res.empty and check_password_hash(res.iloc[0]['senha'], s):
                     st.session_state.update({"logado": True, "user": res.iloc[0].to_dict()})
                     st.rerun()
@@ -99,13 +100,13 @@ else:
     # --- NAVEGAÇÃO ---
     if menu == "🏠 Feed":
         st.title("Mural da Igreja")
-        st.write("Bem-vindo ao mural de notícias!")
+        st.info("Bem-vindo de volta!")
 
     elif menu == "💬 Chat Online":
-        st.title("💬 Chat Comunitário Ágape")
+        st.title("💬 Chat Comunitário")
+        # Login automático via URL
         link_final = f"{URL_CHAT_RAILWAY}?user={u['nome']}&room=Geral"
         
-        st.info(f"Conectado como: {u['nome']}")
         st.markdown(f"""
             <div class="chat-container">
                 <iframe src="{link_final}" width="100%" height="750px" allow="camera; microphone; display-capture; autoplay; clipboard-write" style="border:none;"></iframe>
