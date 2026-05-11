@@ -1,117 +1,108 @@
-import os
-import json
-import datetime
-import redis
-from flask import Flask, render_template, request, url_for, send_from_directory, jsonify
-from flask_socketio import SocketIO, emit
-from werkzeug.utils import secure_filename
+import streamlit as st
+import pandas as pd
+from sqlalchemy import create_engine, text
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+import os, base64, json
 
-# Configuração do Flask e caminhos
-base_dir = os.path.abspath(os.path.dirname(__file__))
-template_dir = os.path.join(base_dir, 'templates')
+# --- 1. CONFIGURAÇÕES E ESTILO ---
+st.set_page_config(page_title="Portal Ágape", layout="wide", page_icon="⛪")
 
-app = Flask(__name__, template_folder=template_dir)
-app.secret_key = 'agape_secret_key_123'
+# URL DO SEU CHAT NO RAILWAY (Ajuste para o seu link real)
+URL_CHAT_RAILWAY = "https://railway.app"
 
-# Configuração de Upload
-UPLOAD_FOLDER = os.path.join(base_dir, 'uploads')
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+def aplicar_estilo_facebook():
+    st.markdown(f"""
+        <style>
+        html, body, [class*="st-"] {{ font-family: Arial, sans-serif !important; }}
+        .stApp {{ background-color: #f0f2f5; }}
+        p, span, label {{ color: #000000 !important; font-size: 19px !important; }}
+        [data-testid="stSidebar"] {{ background-color: #1c1e21 !important; }}
+        [data-testid="stSidebar"] * {{ color: #ffffff !important; font-size: 18px !important; }}
+        .card-post {{ background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid #ced0d4; min-height: 250px; }}
+        .palavra-destaque {{ background: linear-gradient(135deg, #1877f2, #0054ca); color: white !important; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; }}
+        .chat-container {{ border: none; border-radius: 15px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }}
+        </style>
+    """, unsafe_allow_html=True)
 
-# Configuração do Redis (Pegando a variável do Railway)
-REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
+# --- 2. BANCO DE DADOS ---
+engine = create_engine("sqlite:///agape_v60.db", pool_pre_ping=True)
 
-try:
-    r = redis.from_url(REDIS_URL, decode_responses=True)
-    r.ping()
-    print("✅ Conectado ao Redis com sucesso!")
-except Exception as e:
-    print(f"❌ Falha no Redis: {e}")
-    r = None
+def executar_query(sql, params=None):
+    if params is None: params = {}
+    with engine.begin() as conn: conn.execute(text(sql), params)
 
-# Inicializa o SocketIO com gevent
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+def consultar_db(sql, params=None):
+    if params is None: params = {}
+    with engine.connect() as conn: return pd.read_sql_query(text(sql), conn, params=params)
 
-# --- ROTA PARA O LOGO ---
-@app.route('/logo.png')
-def get_logo():
-    # Serve o arquivo logo.png da raiz do seu projeto
-    return send_from_directory(base_dir, 'logo.png')
+def init_db():
+    executar_query('CREATE TABLE IF NOT EXISTS membros (id INTEGER PRIMARY KEY, nome TEXT, email TEXT UNIQUE, codigo TEXT, senha TEXT, is_admin INTEGER)')
+    executar_query('CREATE TABLE IF NOT EXISTS avisos (id INTEGER PRIMARY KEY, conteudo TEXT, img_data TEXT, data TEXT)')
+    executar_query('CREATE TABLE IF NOT EXISTS financeiro (id INTEGER PRIMARY KEY, descricao TEXT, valor REAL, tipo TEXT, data TEXT, usuario TEXT)')
+    executar_query('CREATE TABLE IF NOT EXISTS biblia (id INTEGER PRIMARY KEY, livro TEXT, cap INTEGER, ver INTEGER, texto TEXT)')
+    executar_query('CREATE TABLE IF NOT EXISTS oracoes (id INTEGER PRIMARY KEY, nome TEXT, pedido TEXT, status TEXT, data TEXT)')
+    executar_query('CREATE TABLE IF NOT EXISTS eventos (id INTEGER PRIMARY KEY, titulo TEXT, dia_semana TEXT, hora TEXT)')
+    # Cria admin padrão se não existir
+    if consultar_db("SELECT id FROM membros WHERE email='admin@agape.com'").empty:
+        pw = generate_password_hash('Agape2026')
+        executar_query("INSERT INTO membros (nome, email, codigo, senha, is_admin) VALUES ('Admin', 'admin@agape.com', 'ADM-000', :pw, 1)", {"pw": pw})
 
-# --- ROTAS PRINCIPAIS ---
+init_db()
 
-@app.route('/')
-def index():
-    user = request.args.get('user', 'Irmão')
-    room = request.args.get('room', 'Geral')
+# --- 3. LOGIN ---
+if 'logado' not in st.session_state: st.session_state.logado = False
+
+if not st.session_state.logado:
+    aplicar_estilo_facebook()
+    _, col_l, _ = st.columns([1, 1.2, 1])
+    with col_l:
+        st.markdown("<h1 style='color:#1877f2; text-align:center;'>Portal Ágape</h1>", unsafe_allow_html=True)
+        with st.form("login"):
+            e, s = st.text_input("E-mail"), st.text_input("Senha", type="password")
+            if st.form_submit_button("Entrar", use_container_width=True):
+                res = consultar_db("SELECT * FROM membros WHERE email=:e", {"e":e})
+                # CORREÇÃO AQUI: iloc[0] para pegar a primeira linha
+                if not res.empty and check_password_hash(res.iloc[0]['senha'], s):
+                    st.session_state.update({"logado": True, "user": res.iloc[0].to_dict()})
+                    st.rerun()
+                st.error("Credenciais incorretas.")
+else:
+    u = st.session_state.user
+    aplicar_estilo_facebook()
     
-    history = []
-    if r:
-        try:
-            history_raw = r.lrange(f"chat:{room}", 0, -1)
-            history = [json.loads(m) for m in history_raw]
-        except Exception as e:
-            print(f"Erro ao buscar histórico: {e}")
-            
-    return render_template('chat.html', user=user, room=room, history=history)
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"error": "Sem arquivo"}), 400
-    
-    file = request.files['file']
-    user = request.form.get('user', 'Anonimo')
-    room = request.form.get('room', 'Geral')
-    
-    if file and file.filename != '':
-        filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    with st.sidebar:
+        if os.path.exists("logo.png"):
+            with open("logo.png", "rb") as f:
+                img_data = base64.b64encode(f.read()).decode()
+                st.markdown(f'<p align="center"><img src="data:image/png;base64,{img_data}" width="120"></p>', unsafe_allow_html=True)
+        st.markdown(f"### 👤 {u['nome']}")
         
-        file_url = url_for('uploaded_file', filename=filename, _external=True)
+        label_or = "🙏 Orações"
+        if u['is_admin']:
+            res_or = consultar_db("SELECT COUNT(*) as total FROM oracoes WHERE status='Pendente'")
+            pendentes = res_or.iloc[0]['total'] if not res_or.empty else 0
+            if pendentes > 0: label_or = f"🙏 Orações ({pendentes} 🔴)"
+
+        menu = st.radio("Menu", ["🏠 Feed", "📅 Agenda", "📖 Bíblia", label_or, "🤝 Ofertas", "💰 Financeiro", "💬 Chat Online"])
+        if st.button("Sair"): st.session_state.clear(); st.rerun()
+
+    # --- NAVEGAÇÃO ---
+    if menu == "🏠 Feed":
+        st.title("Mural da Igreja")
+        # Aqui você pode inserir o código de feed que já tinha...
+        st.write("Bem-vindo ao mural de notícias.")
+
+    elif menu == "💬 Chat Online":
+        st.title("💬 Chat Comunitário Ágape")
+        # Login automático: passa o nome do usuário para o chat no Railway
+        link_final = f"{URL_CHAT_RAILWAY}?user={u['nome']}&room=Geral"
         
-        payload = {
-            "user": user,
-            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#818cf8; font-weight:bold;">Arquivo Enviado</a>',
-            "time": datetime.datetime.now().strftime("%H:%M")
-        }
-        
-        if r:
-            r.rpush(f"chat:{room}", json.dumps(payload))
-            r.ltrim(f"chat:{room}", -50, -1)
-        
-        socketio.emit('receive_message', payload)
-        return jsonify({"status": "success", "url": file_url})
-    
-    return jsonify({"error": "Falha no upload"}), 400
+        st.info(f"Conectado como: **{u['nome']}**")
+        st.markdown(f"""
+            <div class="chat-container">
+                <iframe src="{link_final}" width="100%" height="750px" allow="camera; microphone; display-capture; autoplay; clipboard-write" style="border:none;"></iframe>
+            </div>
+        """, unsafe_allow_html=True)
 
-# --- EVENTOS SOCKET.IO ---
-
-@socketio.on('send_message')
-def handle_message(data):
-    room = data.get('room', 'Geral')
-    payload = {
-        "user": data.get('user', 'Anonimo'),
-        "text": data.get('message'),
-        "time": datetime.datetime.now().strftime("%H:%M")
-    }
-    
-    if r:
-        try:
-            r.rpush(f"chat:{room}", json.dumps(payload))
-            r.ltrim(f"chat:{room}", -50, -1)
-        except:
-            pass
-    
-    emit('receive_message', payload, broadcast=True)
-
-# --- INICIALIZAÇÃO ---
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))
-    socketio.run(app, host='0.0.0.0', port=port)
+    # ... (Restante dos menus: Agenda, Bíblia, etc., conforme seu código original)
