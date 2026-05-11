@@ -1,108 +1,103 @@
-import streamlit as st
-import pandas as pd
-from sqlalchemy import create_engine, text
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-import os, base64, json
+import os
+import json
+import datetime
+import redis
+from flask import Flask, render_template, request, url_for, send_from_directory, jsonify
+from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 
-# --- 1. CONFIGURAÇÕES ---
-st.set_page_config(page_title="Portal Ágape", layout="wide", page_icon="⛪")
+# Configuração de caminhos para o Railway
+base_dir = os.path.abspath(os.path.dirname(__file__))
+template_dir = os.path.join(base_dir, 'templates')
 
-URL_CHAT_RAILWAY = "https://railway.app"
+app = Flask(__name__, template_folder=template_dir)
+app.secret_key = 'agape_secret_key_123'
 
-def aplicar_estilo_facebook():
-    st.markdown(f"""
-        <style>
-        .stApp {{ background-color: #f0f2f5; }}
-        p, span, label {{ color: #000000 !important; font-size: 18px !important; }}
-        [data-testid="stSidebar"] {{ background-color: #1c1e21 !important; }}
-        .card-post {{ background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid #ced0d4; }}
-        .chat-container {{ border-radius: 15px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); background: white; }}
-        </style>
-    """, unsafe_allow_html=True)
+# Configuração de Upload de Arquivos
+UPLOAD_FOLDER = os.path.join(base_dir, 'uploads')
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# --- 2. BANCO DE DADOS ---
-engine = create_engine("sqlite:///agape_v60.db", pool_pre_ping=True)
+# Configuração do Redis (Variável de ambiente do Railway)
+REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 
-def executar_query(sql, params=None):
-    if params is None: params = {}
-    with engine.begin() as conn: conn.execute(text(sql), params)
+try:
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    r.ping()
+    print("✅ Conectado ao Redis!")
+except Exception as e:
+    print(f"❌ Erro Redis: {e}")
+    r = None
 
-def consultar_db(sql, params=None):
-    if params is None: params = {}
-    with engine.connect() as conn: return pd.read_sql_query(text(sql), conn, params=params)
+# Inicializa o SocketIO com Gevent (Modo assíncrono compatível)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
-# --- 3. LOGIN ---
-if 'logado' not in st.session_state: st.session_state.logado = False
+@app.route('/logo.png')
+def get_logo():
+    return send_from_directory(base_dir, 'logo.png')
 
-if not st.session_state.logado:
-    aplicar_estilo_facebook()
-    st.markdown("<h1 style='color:#1877f2; text-align:center;'>Portal Ágape</h1>", unsafe_allow_html=True)
-    with st.form("login"):
-        e, s = st.text_input("E-mail"), st.text_input("Senha", type="password")
-        if st.form_submit_button("Entrar", use_container_width=True):
-            res = consultar_db("SELECT * FROM membros WHERE email=:e", {"e":e})
-            if not res.empty and check_password_hash(res.iloc[0]['senha'], s):
-                st.session_state.update({"logado": True, "user": res.iloc[0].to_dict()})
-                st.rerun()
-            st.error("Login inválido.")
-else:
-    u = st.session_state.user
-    aplicar_estilo_facebook()
+@app.route('/')
+def index():
+    user = request.args.get('user', 'Irmão')
+    room = request.args.get('room', 'Geral')
     
-    with st.sidebar:
-        if os.path.exists("logo.png"):
-            with open("logo.png", "rb") as f:
-                img = base64.b64encode(f.read()).decode()
-                st.markdown(f'<p align="center"><img src="data:image/png;base64,{img}" width="120"></p>', unsafe_allow_html=True)
-        st.write(f"👤 **{u['nome']}**")
+    history = []
+    if r:
+        try:
+            history_raw = r.lrange(f"chat:{room}", 0, -1)
+            history = [json.loads(m) for m in history_raw]
+        except:
+            history = []
+            
+    return render_template('chat.html', user=user, room=room, history=history)
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file"}), 400
+    
+    file = request.files['file']
+    user = request.form.get('user', 'Anônimo')
+    room = request.form.get('room', 'Geral')
+    
+    if file and file.filename != '':
+        filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        file_url = url_for('uploaded_file', filename=filename, _external=True)
         
-        # Menu Completo
-        opcoes = ["🏠 Mural", "📅 Agenda", "📖 Bíblia", "🙏 Orações", "🤝 Ofertas", "💰 Financeiro", "💬 Chat Online"]
-        menu = st.radio("Navegação", opcoes)
+        payload = {
+            "user": user,
+            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#818cf8; font-weight:bold;">Arquivo Enviado</a>',
+            "time": datetime.datetime.now().strftime("%H:%M")
+        }
         
-        # Acesso Exclusivo Admin
-        adm = False
-        if u['is_admin'] == 1:
-            st.divider()
-            adm = st.checkbox("⚙️ Painel do Administrador")
+        if r:
+            r.rpush(f"chat:{room}", json.dumps(payload))
         
-        if st.button("Sair"): st.session_state.clear(); st.rerun()
+        socketio.emit('receive_message', payload)
+        return jsonify({"status": "success", "url": file_url})
+    return jsonify({"error": "fail"}), 400
 
-    # --- LÓGICA DE TELAS ---
-    if adm:
-        st.title("⚙️ Gestão Administrativa")
-        st.warning("Você está no modo de controle total.")
-        # Adicione aqui seus botões de excluir membros, ver logs, etc.
+@socketio.on('send_message')
+def handle_message(data):
+    room = data.get('room', 'Geral')
+    payload = {
+        "user": data.get('user', 'Anônimo'),
+        "text": data.get('message'),
+        "time": datetime.datetime.now().strftime("%H:%M")
+    }
+    if r:
+        try:
+            r.rpush(f"chat:{room}", json.dumps(payload))
+            r.ltrim(f"chat:{room}", -50, -1)
+        except: pass
+    emit('receive_message', payload, broadcast=True)
 
-    elif menu == "💬 Chat Online":
-        st.title("💬 Chat Ágape")
-        link = f"{URL_CHAT_RAILWAY}?user={u['nome']}&room=Geral"
-        st.markdown(f"""
-            <div class="chat-container">
-                <iframe src="{link}" width="100%" height="700px" allow="camera; microphone; display-capture" style="border:none;"></iframe>
-            </div>
-        """, unsafe_allow_html=True)
-
-    elif menu == "🏠 Mural":
-        st.title("Mural da Igreja")
-        # Exemplo de listagem de posts
-        posts = consultar_db("SELECT * FROM avisos ORDER BY id DESC")
-        for _, p in posts.iterrows():
-            st.markdown(f'<div class="card-post"><b>{p["data"]}</b><br>{p["conteudo"]}</div>', unsafe_allow_html=True)
-
-    elif menu == "📖 Bíblia":
-        st.title("📖 Bíblia Sagrada")
-        st.info("Consulte os livros e capítulos abaixo.")
-        # Seu código da bíblia original entra aqui
-
-    elif menu == "🙏 Orações":
-        st.title("🙏 Pedidos de Oração")
-        # Seu código de orações original entra aqui
-
-    elif menu == "💰 Financeiro":
-        st.title("💰 Gestão Financeira")
-        if u['is_admin']:
-            st.write("Relatório detalhado de entradas e saídas.")
-        else:
-            st.error("Acesso restrito ao tesoureiro.")
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8080))
+    socketio.run(app, host='0.0.0.0', port=port)
