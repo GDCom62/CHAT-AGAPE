@@ -6,45 +6,43 @@ from flask import Flask, render_template, request, url_for, send_from_directory,
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 
-# Configuração do Flask - Pasta 'templates' obrigatória no plural
+# CONFIGURAÇÃO CORRETA: template_folder como string simples, sem lista []
 app = Flask(__name__, template_folder='templates')
 app.secret_key = 'agape_secret_key_123'
 
-# Configuração de Upload
+# --- CONFIGURAÇÃO DE UPLOAD ---
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Configuração do Redis (Pegando a variável que você configurou no Railway)
+# --- CONFIGURAÇÃO DO REDIS ---
 REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 
 try:
     r = redis.from_url(REDIS_URL, decode_responses=True)
     r.ping()
-    print("✅ Conectado ao Redis!")
+    print("✅ Redis conectado!")
 except Exception as e:
-    print(f"❌ Falha no Redis: {e}")
+    print(f"❌ Erro Redis: {e}")
     r = None
 
-# Inicializa SocketIO com gevent
+# --- SOCKETIO COM GEVENT ---
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 @app.route('/')
 def index():
-    user = request.args.get('user', 'Irmao')
+    user = request.args.get('user', 'Irmão')
     room = request.args.get('room', 'Geral')
     
     history = []
     if r:
         try:
-            # Busca as últimas 50 mensagens para não sobrecarregar
             history_raw = r.lrange(f"chat:{room}", 0, -1)
             history = [json.loads(m) for m in history_raw]
-        except Exception as e:
-            print(f"Erro ao carregar historico: {e}")
+        except:
+            history = []
             
-    # Tenta renderizar o chat.html (Certifique-se que está na pasta /templates)
     return render_template('chat.html', user=user, room=room, history=history)
 
 @app.route('/uploads/<filename>')
@@ -57,24 +55,22 @@ def upload_file():
         return jsonify({"error": "No file"}), 400
     
     file = request.files['file']
-    user = request.form.get('user', 'Anonimo')
+    user = request.form.get('user', 'Anônimo')
     room = request.form.get('room', 'Geral')
     
     if file and file.filename != '':
         filename = secure_filename(f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        
         file_url = url_for('uploaded_file', filename=filename, _external=True)
         
         payload = {
             "user": user,
-            "text": f'📎 <a href="{file_url}" target="_blank" style="color:#007bff; font-weight:bold;">Arquivo: {file.filename}</a>',
+            "text": f'📎 <a href="{file_url}" target="_blank">Arquivo: {file.filename}</a>',
             "time": datetime.datetime.now().strftime("%H:%M")
         }
         
         if r:
             r.rpush(f"chat:{room}", json.dumps(payload))
-            r.ltrim(f"chat:{room}", -50, -1)
         
         socketio.emit('receive_message', payload)
         return jsonify({"status": "success", "url": file_url})
@@ -85,7 +81,7 @@ def upload_file():
 def handle_message(data):
     room = data.get('room', 'Geral')
     payload = {
-        "user": data.get('user', 'Anonimo'),
+        "user": data.get('user', 'Anônimo'),
         "text": data.get('message'),
         "time": datetime.datetime.now().strftime("%H:%M")
     }
