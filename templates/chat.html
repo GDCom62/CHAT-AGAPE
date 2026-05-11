@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ágape Premium</title>
     <script src="https://cloudflare.com"></script>
-    <!-- Importante: Font Awesome para os ícones aparecerem -->
+    <!-- Font Awesome para os ícones -->
     <link rel="stylesheet" href="https://cloudflare.com">
     <style>
         :root { 
@@ -34,6 +34,7 @@
             justify-content: space-between; 
             align-items: center; 
             border-bottom: 2px solid var(--primary); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
         /* Área do Chat */
@@ -44,6 +45,7 @@
             display: flex; 
             flex-direction: column; 
             gap: 15px; 
+            background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%);
         }
 
         .msg { 
@@ -52,9 +54,12 @@
             border-radius: 15px; 
             max-width: 75%; 
             line-height: 1.4;
-            color: #ffffff; /* Contraste máximo */
+            color: #ffffff;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+            animation: fadeIn 0.3s ease;
         }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         .msg b { color: #818cf8; display: block; margin-bottom: 5px; font-size: 0.9em; }
 
@@ -72,40 +77,42 @@
             flex: 1; 
             background: #0f172a; 
             border: 1px solid #475569; 
-            padding: 12px 20px; 
-            border-radius: 25px; 
+            padding: 15px 20px; 
+            border-radius: 30px; 
             color: #ffffff; 
             font-size: 16px;
             outline: none;
         }
 
-        input[type="text"]:focus { border-color: var(--primary); }
+        input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 10px rgba(79, 70, 229, 0.4); }
 
-        /* Botões */
+        /* Botões Estilizados */
         .btn {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
             border: none;
             cursor: pointer;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 1.2em;
             transition: all 0.2s;
             color: white;
+            min-width: 60px;
         }
 
-        .btn-video { background: #22c55e; }
-        .btn-file { background: #64748b; }
-        .btn-send { background: var(--primary); width: 60px; border-radius: 15px; }
-        .btn:hover { transform: scale(1.1); filter: brightness(1.1); }
+        .btn i { font-size: 1.4em; margin-bottom: 4px; color: white !important; }
+        .btn span { font-size: 10px; font-weight: bold; text-transform: uppercase; }
+
+        .btn-video { background: #22c55e; height: 50px; border-radius: 12px; padding: 5px 15px; flex-direction: row; gap: 8px; }
+        .btn-file { background: #64748b; height: 55px; border-radius: 15px; }
+        .btn-send { background: var(--primary); height: 55px; border-radius: 15px; }
+
+        .btn:hover { transform: scale(1.05); filter: brightness(1.2); }
 
         /* Janela Suspensa de Vídeo */
         #video-window { 
-            position: fixed; top: 80px; right: 20px; width: 320px; height: 240px; 
-            background: #000; border-radius: 12px; overflow: hidden; display: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 9999;
+            position: fixed; top: 85px; right: 20px; width: 320px; height: 240px; 
+            background: #000; border-radius: 15px; overflow: hidden; display: none;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6); z-index: 9999;
             border: 2px solid var(--primary);
         }
     </style>
@@ -113,20 +120,19 @@
 <body>
 
 <header>
-    <div><b style="color:var(--primary)">SALA:</b> {{ room }}</div>
-    <div><i class="fas fa-user"></i> <b>{{ user }}</b></div>
-    <button class="btn btn-video" onclick="toggleVideo()" title="Vídeo Chamada">
-        <i class="fas fa-video"></i>
+    <div><b style="color:var(--primary); letter-spacing: 1px;">ÁGAPE</b> <span style="margin-left:10px; color:var(--text-dim)">| {{ room }}</span></div>
+    <div style="font-size: 0.9em;"><i class="fas fa-user-circle"></i> {{ user }}</div>
+    <button class="btn btn-video" onclick="toggleVideo()">
+        <i class="fas fa-video"></i> <span>VÍDEO</span>
     </button>
 </header>
 
-<!-- Janela Flutuante -->
-<div id="video-window" id="draggable">
-    <div style="background: #1e293b; padding: 5px 10px; display: flex; justify-content: space-between; font-size: 12px;">
-        <span>Câmera Ao Vivo</span>
-        <i class="fas fa-times" onclick="toggleVideo()" style="cursor:pointer"></i>
+<div id="video-window">
+    <div style="background: #1e293b; padding: 8px 12px; display: flex; justify-content: space-between; font-size: 11px; font-weight: bold;">
+        <span><i class="fas fa-broadcast-tower" style="color:#ef4444"></i> CÂMERA AO VIVO</span>
+        <i class="fas fa-times" onclick="toggleVideo()" style="cursor:pointer; font-size: 14px;"></i>
     </div>
-    <div id="jitsi-container" style="height: calc(100% - 25px);"></div>
+    <div id="jitsi-container" style="height: calc(100% - 30px);"></div>
 </div>
 
 <div id="chat-box">
@@ -141,14 +147,16 @@
 
 <div id="controls">
     <input type="file" id="fileInput" style="display: none;" onchange="uploadFile()">
-    <button class="btn btn-file" onclick="document.getElementById('fileInput').click()" title="Anexar Arquivo">
+    <button class="btn btn-file" onclick="document.getElementById('fileInput').click()">
         <i class="fas fa-paperclip"></i>
+        <span>ANEXAR</span>
     </button>
     
-    <input type="text" id="messageInput" placeholder="Escreva aqui..." onkeypress="if(event.key==='Enter') sendMessage()">
+    <input type="text" id="messageInput" placeholder="Digite sua mensagem aqui..." onkeypress="if(event.key==='Enter') sendMessage()">
     
     <button class="btn btn-send" onclick="sendMessage()">
         <i class="fas fa-paper-plane"></i>
+        <span>ENVIAR</span>
     </button>
 </div>
 
@@ -167,7 +175,8 @@
                 roomName: "Agape_" + room,
                 parentNode: document.getElementById('jitsi-container'),
                 width: '100%', height: '100%',
-                userInfo: { displayName: user }
+                userInfo: { displayName: user },
+                interfaceConfigOverwrite: { RECENT_LIST_ENABLED: false }
             };
             jitsiApi = new JitsiMeetExternalAPI("meet.jit.si", options);
         } else {
@@ -189,15 +198,16 @@
         if (fileInput.files.length === 0) return;
         
         const fd = new FormData();
-        fd.append('file', fileInput.files[0]);
+        fd.append('file', fileInput.files[0]); // Corrigido para pegar o primeiro arquivo
         fd.append('user', user);
         fd.append('room', room);
 
         try {
-            await fetch('/upload', {method: 'POST', body: fd});
-            fileInput.value = '';
+            const res = await fetch('/upload', {method: 'POST', body: fd});
+            if(res.ok) fileInput.value = '';
+            else alert("Erro no servidor ao subir arquivo.");
         } catch (err) {
-            alert("Erro ao subir arquivo");
+            alert("Erro de conexão ao subir arquivo.");
         }
     }
 
