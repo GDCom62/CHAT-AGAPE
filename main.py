@@ -12,25 +12,25 @@ r = redis.from_url(REDIS_URL, decode_responses=True)
 @app.route('/')
 def index():
     user = request.args.get('user', 'Irmão')
-    room = request.args.get('room', 'Geral')
-    # Renovação de presença também pelo chat
     r.set(f"online:{user}", "online", ex=60)
-    history = [json.loads(m) for m in r.lrange(f"chat:{room}", 0, -1)] if r else []
-    return render_template('chat.html', user=user, room=room, history=history)
+    history = [json.loads(m) for m in r.lrange("chat:Geral", 0, -1)]
+    return render_template('chat.html', user=user, history=history)
 
 @app.route('/usuarios')
 def listar_usuarios():
-    try:
-        # Busca todas as chaves de usuários online
-        keys = r.keys("online:*")
-        membros = [k.split(":")[1] for k in keys]
-        return jsonify(membros)
-    except: return jsonify([])
+    keys = r.keys("online:*")
+    membros = [k.split(":")[1] for k in keys]
+    return jsonify(membros)
+
+@socketio.on('typing')
+def handle_typing(data):
+    # Envia para todos que o usuário X está digitando
+    emit('is_typing', {'user': data['user'], 'typing': data['typing']}, broadcast=True, include_self=False)
 
 @socketio.on('send_message')
 def handle_message(data):
     payload = {"user": data.get('user'), "text": data.get('message'), "time": datetime.datetime.now().strftime("%H:%M")}
-    if r: r.rpush(f"chat:{data.get('room', 'Geral')}", json.dumps(payload))
+    r.rpush("chat:Geral", json.dumps(payload))
     emit('receive_message', payload, broadcast=True)
 
 if __name__ == '__main__':
