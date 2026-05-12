@@ -1,18 +1,13 @@
-import os, json, datetime, redis, sqlite3
+import os, json, datetime, redis
 from flask import Flask, render_template, request, url_for, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__, template_folder='templates')
-app.secret_key = 'agape_123'
+app.secret_key = 'agape_chat_123'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
-REDIS_URL = os.environ.get('REDIS_URL', 'sua_url_aqui')
+REDIS_URL = os.environ.get('REDIS_URL', 'rediss://default:gQAAAAAAAcePAAIgcDFiYzVlZTAzZGZiNTg0OWFlYjUxZDdhY2E3Mzg0ODQ2Mg@calm-kangaroo-116623.upstash.io:6379')
 r = redis.from_url(REDIS_URL, decode_responses=True)
-
-@app.after_request
-def add_header(response):
-    response.headers['X-Frame-Options'] = 'ALLOWALL'
-    return response
 
 @app.route('/')
 def index():
@@ -23,30 +18,14 @@ def index():
 
 @app.route('/usuarios')
 def listar_usuarios():
+    # Busca a lista de membros que o Portal salvou no Redis
     try:
-        conn = sqlite3.connect('agape_v60.db')
-        usuarios = [row[0] for row in conn.execute("SELECT nome FROM membros").fetchall()]
-        conn.close()
-        return jsonify(usuarios)
+        membros = list(r.smembers("agape_membros_online"))
+        return jsonify(membros)
     except: return jsonify([])
 
 @app.route('/logo.png')
 def get_logo(): return send_from_directory(os.getcwd(), 'logo.png')
-
-@app.route('/upload', methods=['POST'])
-def upload():
-    file = request.files.get('file')
-    if file:
-        os.makedirs('uploads', exist_ok=True)
-        filename = f"{datetime.datetime.now().strftime('%M%S')}_{file.filename}"
-        file.save(os.path.join('uploads', filename))
-        url = url_for('get_file', filename=filename, _external=True)
-        payload = {"user": request.form.get('user'), "text": f'📎 <a href="{url}" target="_blank">Arquivo</a>', "time": "00:00"}
-        socketio.emit('receive_message', payload); return jsonify({"ok": True})
-    return jsonify({"ok": False}), 400
-
-@app.route('/uploads/<filename>')
-def get_file(filename): return send_from_directory('uploads', filename)
 
 @socketio.on('send_message')
 def handle_message(data):
