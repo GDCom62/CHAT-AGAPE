@@ -2,142 +2,73 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ágape Premium Chat</title>
+    <title>Ágape Chat</title>
     <script src="https://cloudflare.com"></script>
     <link rel="stylesheet" href="https://cloudflare.com">
     <style>
-        :root { --primary: #4f46e5; --bg: #0f172a; --card: #1e293b; --text: #ffffff; --logo-url: url('/logo.png'); }
-        
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); }
-
-        /* Barra Lateral de Membros */
-        #sidebar { width: 240px; background: var(--card); border-right: 1px solid #334155; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 20px; border-bottom: 1px solid #334155; color: var(--primary); font-weight: bold; }
-        #user-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .user-online { padding: 10px; font-size: 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .status-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 5px #22c55e; }
-
-        /* Área Principal */
+        :root { --primary: #4f46e5; --bg: #0f172a; --card: #1e293b; --logo-url: url('/logo.png'); }
+        body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; background: var(--bg); color: #fff; }
+        #sidebar { width: 220px; background: var(--card); border-right: 1px solid #334155; padding: 15px; }
         #chat-main { flex: 1; display: flex; flex-direction: column; }
-        header { padding: 15px 25px; background: var(--card); display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); }
-        
-        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .msg { background: #334155; padding: 12px 15px; border-radius: 15px; max-width: 80%; position: relative; padding-left: 55px; }
-        .msg::before { content: ""; position: absolute; left: 10px; top: 12px; width: 35px; height: 35px; background: var(--logo-url) center/contain no-repeat; background-color: #fff; border-radius: 50%; }
-
-        /* Janela de Vídeo */
-        #video-window { position: fixed; top: 80px; right: 20px; width: 320px; height: 240px; background: #000; border-radius: 12px; display: none; z-index: 1000; border: 2px solid var(--primary); overflow: hidden; }
-
-        /* Rodapé e Controles */
-        #typing-indicator { padding: 0 25px; font-size: 12px; color: var(--primary); height: 20px; font-style: italic; }
-        #controls { padding: 20px; background: var(--card); display: flex; gap: 10px; align-items: center; }
-        input[type="text"] { flex: 1; background: #0f172a; border: 1px solid #475569; padding: 15px; border-radius: 25px; color: #fff; outline: none; }
-        .btn { border: none; cursor: pointer; color: white; border-radius: 50%; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
-        .btn-video { background: #22c55e; width: auto; border-radius: 20px; padding: 0 15px; }
-        .btn-send { background: var(--primary); }
+        #chat-box { flex: 1; overflow-y: auto; padding: 20px; }
+        .msg { background: #334155; padding: 12px; border-radius: 12px; margin-bottom: 10px; position: relative; padding-left: 50px; border-left: 4px solid var(--primary); }
+        .msg::before { content: ""; position: absolute; left: 10px; top: 10px; width: 30px; height: 30px; background: var(--logo-url) center/contain no-repeat; border-radius: 50%; background-color: #fff; }
+        .user-online { padding: 8px; font-size: 14px; color: #10b981; }
+        #video-window { position: fixed; top: 70px; right: 20px; width: 300px; height: 220px; background: #000; display: none; border: 2px solid var(--primary); border-radius: 10px; overflow: hidden; z-index: 1000; }
+        #controls { padding: 20px; display: flex; gap: 10px; background: var(--card); }
+        input { flex: 1; background: #0f172a; border: 1px solid #475569; padding: 12px; border-radius: 20px; color: #fff; outline: none; }
     </style>
 </head>
 <body>
-
 <div id="sidebar">
-    <div class="sidebar-header"><i class="fas fa-users"></i> IRMÃOS ONLINE</div>
+    <h3 style="color: var(--primary)">🟢 ONLINE</h3>
     <div id="user-list">Buscando...</div>
 </div>
-
 <div id="chat-main">
-    <header>
-        <span><img src="/logo.png" height="35" onerror="this.style.display='none'"> <b>ÁGAPE PREMIUM</b></span>
-        <button class="btn btn-video" onclick="toggleVideo()"><i class="fas fa-video"></i> &nbsp; VÍDEO CHAMADA</button>
+    <header style="padding:15px; background:var(--card); display:flex; justify-content:space-between; border-bottom: 2px solid var(--primary);">
+        <span><img src="/logo.png" height="30"> <b>ÁGAPE PREMIUM</b></span>
+        <button onclick="toggleVideo()" style="background:#22c55e; color:#fff; border:none; padding:8px 15px; border-radius:10px; cursor:pointer;"><i class="fas fa-video"></i> VÍDEO</button>
     </header>
-
-    <div id="video-window">
-        <div style="background:#1e293b; padding:5px 10px; font-size:11px; display:flex; justify-content:space-between;">
-            <span>AO VIVO</span><i class="fas fa-times" onclick="toggleVideo()" style="cursor:pointer"></i>
-        </div>
-        <div id="jitsi-container" style="height: calc(100% - 25px);"></div>
-    </div>
-
+    <div id="video-window"><div id="jitsi-container" style="height:100%"></div></div>
     <div id="chat-box">
-        {% for m in history %}
-        <div class="msg"><b>{{ m.user }}</b>: {{ m.text|safe }}</div>
-        {% endfor %}
+        {% for m in history %}<div class="msg"><b>{{m.user}}</b>: {{m.text|safe}}</div>{% endfor %}
     </div>
-
-    <div id="typing-indicator"></div>
-
+    <div id="typing-indicator" style="padding: 5px 20px; font-size: 12px; color: var(--primary); height: 20px;"></div>
     <div id="controls">
-        <input type="text" id="mIn" placeholder="Digite sua mensagem..." oninput="emitTyping()" onkeypress="if(event.key==='Enter') send()">
-        <button class="btn btn-send" onclick="send()"><i class="fas fa-paper-plane"></i></button>
+        <input type="text" id="mIn" placeholder="Sua mensagem..." oninput="emitTyping()" onkeypress="if(event.key==='Enter') send()">
+        <button onclick="send()" style="background:var(--primary); color:#fff; border:none; border-radius:50%; width:45px; height:45px; cursor:pointer;"><i class="fas fa-paper-plane"></i></button>
     </div>
 </div>
-
 <script src="https://jit.si"></script>
 <script>
-    const socket = io();
-    const user = "{{ user }}";
-    const room = "{{ room }}";
-    let jitsiApi = null;
-    let typingTimeout;
-
-    // --- SISTEMA DE PRESENÇA ---
-    async function updateOnlineList() {
-        try {
-            const res = await fetch('/usuarios');
-            const data = await res.json();
-            const list = document.getElementById('user-list');
-            list.innerHTML = data.map(u => `<div class="user-online"><span class="status-dot"></span> ${u}</div>`).join('');
-        } catch(e) { console.error("Erro ao listar usuários"); }
+    const socket = io(); const user = "{{user}}"; let typingTimer;
+    async function getOnline() {
+        const r = await fetch('/usuarios'); const us = await r.json();
+        document.getElementById('user-list').innerHTML = us.map(u => `<div class="user-online">● ${u}</div>`).join('');
     }
-
-    // --- SISTEMA DE DIGITAÇÃO ---
     function emitTyping() {
-        socket.emit('typing', {user: user, typing: true});
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-            socket.emit('typing', {user: user, typing: false});
-        }, 2000);
+        socket.emit('typing', {user, typing: true});
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => socket.emit('typing', {user, typing: false}), 2000);
     }
-
-    socket.on('is_typing', data => {
-        const indicator = document.getElementById('typing-indicator');
-        indicator.innerText = data.typing ? `${data.user} está digitando...` : "";
-    });
-
-    // --- VÍDEO E MENSAGENS ---
+    socket.on('is_typing', d => { document.getElementById('typing-indicator').innerText = d.typing ? `${d.user} está digitando...` : ""; });
     function toggleVideo() {
-        const win = document.getElementById('video-window');
-        if (win.style.display === 'none' || win.style.display === '') {
-            win.style.display = 'block';
-            jitsiApi = new JitsiMeetExternalAPI("meet.jit.si", {
-                roomName: "Agape_" + room,
-                parentNode: document.getElementById('jitsi-container'),
-                userInfo: { displayName: user }
-            });
-        } else {
-            win.style.display = 'none';
-            if(jitsiApi) jitsiApi.dispose();
-        }
+        const v = document.getElementById('video-window');
+        if(v.style.display==='none' || !v.style.display){
+            v.style.display='block';
+            new JitsiMeetExternalAPI("meet.jit.si", { roomName: "Agape_Geral", parentNode: document.getElementById('jitsi-container'), userInfo: {displayName: user} });
+        } else { v.style.display='none'; }
     }
-
     function send() {
-        const input = document.getElementById('mIn');
-        if(input.value.trim()){
-            socket.emit('send_message', {user, room, message: input.value});
-            socket.emit('typing', {user: user, typing: false});
-            input.value = '';
-        }
+        const i = document.getElementById('mIn');
+        if(i.value){ socket.emit('send_message', {user, message: i.value}); i.value=''; }
     }
-
-    socket.on('receive_message', data => {
-        const box = document.getElementById('chat-box');
-        box.innerHTML += `<div class="msg"><b>${data.user}</b>: ${data.text}</div>`;
-        box.scrollTop = box.scrollHeight;
+    socket.on('receive_message', d => {
+        const b = document.getElementById('chat-box');
+        b.innerHTML += `<div class="msg"><b>${d.user}</b>: ${d.text}</div>`; b.scrollTop = b.scrollHeight;
     });
-
-    // Inicialização
-    setInterval(updateOnlineList, 5000);
-    updateOnlineList();
+    setInterval(getOnline, 5000); getOnline();
+    setInterval(() => fetch('/'), 30000); // Heartbeat
 </script>
 </body>
 </html>
