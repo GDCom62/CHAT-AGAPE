@@ -10,8 +10,8 @@
         #sidebar { width: 220px; background: var(--card); border-right: 1px solid #334155; padding: 15px; }
         #chat-main { flex: 1; display: flex; flex-direction: column; }
         #chat-box { flex: 1; overflow-y: auto; padding: 20px; }
-        .msg { background: #334155; padding: 12px; border-radius: 12px; margin-bottom: 10px; border-left: 4px solid var(--primary); }
-        .user-online { padding: 8px; font-size: 14px; color: #10b981; }
+        .msg { background: #334155; padding: 12px; border-radius: 12px; margin-bottom: 10px; }
+        .user-online { padding: 8px; font-size: 14px; color: #10b981; border-bottom: 1px solid #334155; }
         #controls { padding: 20px; display: flex; gap: 10px; background: var(--card); }
         input { flex: 1; background: #0f172a; border: 1px solid #475569; padding: 12px; border-radius: 20px; color: #fff; outline: none; }
         button { background: var(--primary); border: none; color: #fff; padding: 10px 20px; border-radius: 20px; cursor: pointer; }
@@ -20,14 +20,9 @@
 <body>
 <div id="sidebar">
     <h3 style="color: var(--primary); font-size: 16px;">🟢 ONLINE AGORA</h3>
-    <div id="user-list">Buscando irmãos...</div>
+    <div id="user-list">Buscando...</div>
 </div>
 <div id="chat-main">
-    <header style="padding:15px; background:var(--card); display:flex; justify-content:space-between;">
-        <span><img src="/logo.png" height="30" onerror="this.style.display='none'"> <b>ÁGAPE PREMIUM</b></span>
-        <button onclick="toggleVideo()" style="background:#22c55e;"><i class="fas fa-video"></i> VÍDEO</button>
-    </header>
-    <div id="video-window" style="display:none; height:300px; background:#000;"><div id="jitsi-container" style="height:100%"></div></div>
     <div id="chat-box">
         {% for m in history %}<div class="msg"><b>{{m.user}}</b>: {{m.text|safe}}</div>{% endfor %}
     </div>
@@ -36,24 +31,34 @@
         <button onclick="send()"><i class="fas fa-paper-plane"></i></button>
     </div>
 </div>
-<script src="https://jit.si"></script>
 <script>
     const socket = io(); const user = "{{user}}"; const room = "{{room}}";
+    
+    async function updatePresence() {
+        // Apenas carrega a página silenciosamente para renovar o 'ex=60' no servidor
+        fetch(`/?user=${user}&room=${room}`); 
+    }
+
     async function getOnline() {
         try {
             const r = await fetch('/usuarios'); const us = await r.json();
             document.getElementById('user-list').innerHTML = us.map(u => `<div class="user-online">● ${u}</div>`).join('');
         } catch(e) {}
     }
+
     function send() {
         const i = document.getElementById('mIn');
         if(i.value){ socket.emit('send_message', {user, room, message: i.value}); i.value=''; }
     }
+
     socket.on('receive_message', d => {
         const b = document.getElementById('chat-box');
         b.innerHTML += `<div class="msg"><b>${d.user}</b>: ${d.text}</div>`; b.scrollTop = b.scrollHeight;
     });
-    setInterval(getOnline, 5000); getOnline(); // Atualiza a cada 5 segundos
+
+    setInterval(getOnline, 5000); 
+    setInterval(updatePresence, 30000); // Avisa que está online a cada 30s
+    getOnline();
 </script>
 </body>
 </html>
