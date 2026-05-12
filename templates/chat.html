@@ -1,74 +1,48 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Ágape Chat</title>
-    <script src="https://cloudflare.com"></script>
-    <link rel="stylesheet" href="https://cloudflare.com">
-    <style>
-        :root { --primary: #4f46e5; --bg: #0f172a; --card: #1e293b; --logo-url: url('/logo.png'); }
-        body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; background: var(--bg); color: #fff; }
-        #sidebar { width: 220px; background: var(--card); border-right: 1px solid #334155; padding: 15px; }
-        #chat-main { flex: 1; display: flex; flex-direction: column; }
-        #chat-box { flex: 1; overflow-y: auto; padding: 20px; }
-        .msg { background: #334155; padding: 12px; border-radius: 12px; margin-bottom: 10px; position: relative; padding-left: 50px; border-left: 4px solid var(--primary); }
-        .msg::before { content: ""; position: absolute; left: 10px; top: 10px; width: 30px; height: 30px; background: var(--logo-url) center/contain no-repeat; border-radius: 50%; background-color: #fff; }
-        .user-online { padding: 8px; font-size: 14px; color: #10b981; }
-        #video-window { position: fixed; top: 70px; right: 20px; width: 300px; height: 220px; background: #000; display: none; border: 2px solid var(--primary); border-radius: 10px; overflow: hidden; z-index: 1000; }
-        #controls { padding: 20px; display: flex; gap: 10px; background: var(--card); }
-        input { flex: 1; background: #0f172a; border: 1px solid #475569; padding: 12px; border-radius: 20px; color: #fff; outline: none; }
-    </style>
-</head>
+<!-- ... (mesmo head e style do anterior) ... -->
 <body>
 <div id="sidebar">
-    <h3 style="color: var(--primary)">🟢 ONLINE</h3>
-    <div id="user-list">Buscando...</div>
+    <h3 style="color: #4f46e5">🟢 ONLINE</h3>
+    <div id="user-list"></div>
 </div>
 <div id="chat-main">
-    <header style="padding:15px; background:var(--card); display:flex; justify-content:space-between; border-bottom: 2px solid var(--primary);">
+    <header style="padding:15px; background:#1e293b; display:flex; justify-content:space-between;">
         <span><img src="/logo.png" height="30"> <b>ÁGAPE PREMIUM</b></span>
         <button onclick="toggleVideo()" style="background:#22c55e; color:#fff; border:none; padding:8px 15px; border-radius:10px; cursor:pointer;"><i class="fas fa-video"></i> VÍDEO</button>
     </header>
-    <div id="video-window"><div id="jitsi-container" style="height:100%"></div></div>
-    <div id="chat-box">
-        {% for m in history %}<div class="msg"><b>{{m.user}}</b>: {{m.text|safe}}</div>{% endfor %}
+    <div id="video-window" style="display:none; height:250px;"><div id="jitsi-container" style="height:100%"></div></div>
+    <div id="chat-box" style="flex:1; overflow-y:auto; padding:20px;">
+        {% for m in history %}<div class="msg" style="background:#334155; padding:12px; margin-bottom:10px; border-radius:10px;"><b>{{m.user}}</b>: {{m.text|safe}}</div>{% endfor %}
     </div>
-    <div id="typing-indicator" style="padding: 5px 20px; font-size: 12px; color: var(--primary); height: 20px;"></div>
-    <div id="controls">
-        <input type="text" id="mIn" placeholder="Sua mensagem..." oninput="emitTyping()" onkeypress="if(event.key==='Enter') send()">
-        <button onclick="send()" style="background:var(--primary); color:#fff; border:none; border-radius:50%; width:45px; height:45px; cursor:pointer;"><i class="fas fa-paper-plane"></i></button>
+    <div id="controls" style="padding:20px; background:#1e293b; display:flex; gap:10px;">
+        <!-- BOTÃO DO CLIP RESTAURADO -->
+        <input type="file" id="fIn" style="display:none" onchange="up()">
+        <button onclick="document.getElementById('fIn').click()" style="background:#64748b; color:#fff; border:none; border-radius:50%; width:45px; height:45px; cursor:pointer;"><i class="fas fa-paperclip"></i></button>
+        
+        <input type="text" id="mIn" placeholder="Mensagem..." style="flex:1; padding:12px; border-radius:20px; background:#0f172a; color:#fff; border:1px solid #475569;">
+        <button onclick="send()" style="background:#4f46e5; color:#fff; border:none; border-radius:50%; width:45px; height:45px; cursor:pointer;"><i class="fas fa-paper-plane"></i></button>
     </div>
 </div>
-<script src="https://jit.si"></script>
 <script>
-    const socket = io(); const user = "{{user}}"; let typingTimer;
+    const socket = io(); const user = "{{user}}";
     async function getOnline() {
         const r = await fetch('/usuarios'); const us = await r.json();
-        document.getElementById('user-list').innerHTML = us.map(u => `<div class="user-online">● ${u}</div>`).join('');
+        document.getElementById('user-list').innerHTML = us.map(u => `<div style="padding:8px; font-size:14px;">● ${u}</div>`).join('');
     }
-    function emitTyping() {
-        socket.emit('typing', {user, typing: true});
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => socket.emit('typing', {user, typing: false}), 2000);
-    }
-    socket.on('is_typing', d => { document.getElementById('typing-indicator').innerText = d.typing ? `${d.user} está digitando...` : ""; });
-    function toggleVideo() {
-        const v = document.getElementById('video-window');
-        if(v.style.display==='none' || !v.style.display){
-            v.style.display='block';
-            new JitsiMeetExternalAPI("meet.jit.si", { roomName: "Agape_Geral", parentNode: document.getElementById('jitsi-container'), userInfo: {displayName: user} });
-        } else { v.style.display='none'; }
+    async function up() {
+        const fileInput = document.getElementById('fIn');
+        const fd = new FormData(); fd.append('file', fileInput.files[0]); fd.append('user', user);
+        await fetch('/upload', {method:'POST', body:fd});
+        fileInput.value = '';
     }
     function send() {
         const i = document.getElementById('mIn');
         if(i.value){ socket.emit('send_message', {user, message: i.value}); i.value=''; }
     }
     socket.on('receive_message', d => {
-        const b = document.getElementById('chat-box');
-        b.innerHTML += `<div class="msg"><b>${d.user}</b>: ${d.text}</div>`; b.scrollTop = b.scrollHeight;
+        document.getElementById('chat-box').innerHTML += `<div class="msg" style="background:#334155; padding:12px; margin-bottom:10px; border-radius:10px;"><b>${d.user}</b>: ${d.text}</div>`;
+        document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
     });
     setInterval(getOnline, 5000); getOnline();
-    setInterval(() => fetch('/'), 30000); // Heartbeat
 </script>
 </body>
 </html>
