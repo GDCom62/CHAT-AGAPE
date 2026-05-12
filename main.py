@@ -13,19 +13,19 @@ r = redis.from_url(REDIS_URL, decode_responses=True)
 def index():
     user = request.args.get('user', 'Irmão')
     room = request.args.get('room', 'Geral')
+    # Renovação de presença também pelo chat
+    r.set(f"online:{user}", "online", ex=60)
     history = [json.loads(m) for m in r.lrange(f"chat:{room}", 0, -1)] if r else []
     return render_template('chat.html', user=user, room=room, history=history)
 
 @app.route('/usuarios')
 def listar_usuarios():
-    # Busca a lista de membros que o Portal salvou no Redis
     try:
-        membros = list(r.smembers("agape_membros_online"))
+        # Busca todas as chaves de usuários online
+        keys = r.keys("online:*")
+        membros = [k.split(":")[1] for k in keys]
         return jsonify(membros)
     except: return jsonify([])
-
-@app.route('/logo.png')
-def get_logo(): return send_from_directory(os.getcwd(), 'logo.png')
 
 @socketio.on('send_message')
 def handle_message(data):
