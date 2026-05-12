@@ -19,9 +19,15 @@ def index():
 @app.route('/usuarios')
 def listar_usuarios():
     try:
+        # Busca todas as chaves online no Redis
         keys = r.keys("online:*")
-        return jsonify([k.replace("online:", "") for k in keys])
-    except: return jsonify([])
+        # Remove o prefixo 'online:' para exibir apenas o nome
+        membros = [k.replace("online:", "") for k in keys]
+        return jsonify(membros)
+    except Exception as e:
+        print(f"Erro ao buscar membros: {e}")
+        return jsonify([])
+
 
 @app.route('/upload', methods=['POST'])
 def upload():
