@@ -12,33 +12,30 @@ r = redis.from_url(REDIS_URL, decode_responses=True)
 @app.route('/')
 def index():
     user = request.args.get('user', 'Irmão')
+    room = request.args.get('room', 'agape_oficial')
     r.set(f"online:{user}", "online", ex=60)
-    history = [json.loads(m) for m in r.lrange("chat:Geral", 0, -1)]
-    return render_template('chat.html', user=user, history=history)
+    history = [json.loads(m) for m in r.lrange(f"chat:{room}", 0, -1)]
+    return render_template('chat.html', user=user, room=room, history=history)
 
 @app.route('/usuarios')
 def listar_usuarios():
-    try:
-        # Busca todas as chaves online no Redis
-        keys = r.keys("online:*")
-        # Remove o prefixo 'online:' para exibir apenas o nome
-        membros = [k.replace("online:", "") for k in keys]
-        return jsonify(membros)
-    except Exception as e:
-        print(f"Erro ao buscar membros: {e}")
-        return jsonify([])
-
+    keys = r.keys("online:*")
+    return jsonify([k.replace("online:", "") for k in keys])
 
 @app.route('/upload', methods=['POST'])
 def upload():
     file = request.files.get('file')
+    user = request.form.get('user')
+    room = request.form.get('room')
     if file:
         os.makedirs('uploads', exist_ok=True)
         filename = f"{datetime.datetime.now().strftime('%M%S')}_{file.filename}"
         file.save(os.path.join('uploads', filename))
         url = url_for('get_file', filename=filename, _external=True)
-        payload = {"user": request.form.get('user'), "text": f'📎 <a href="{url}" target="_blank" style="color:#4f46e5; font-weight:bold;">Arquivo Enviado</a>', "time": "00:00"}
-        socketio.emit('receive_message', payload); return jsonify({"ok": True})
+        payload = {"user": user, "text": f'📎 <a href="{url}" target="_blank" style="color:#4f46e5; font-weight:bold;">Arquivo Enviado</a>', "time": "00:00"}
+        r.rpush(f"chat:{room}", json.dumps(payload))
+        socketio.emit('receive_message', payload)
+        return jsonify({"ok": True})
     return jsonify({"ok": False}), 400
 
 @app.route('/uploads/<filename>')
@@ -49,8 +46,9 @@ def get_logo(): return send_from_directory(os.getcwd(), 'logo.png')
 
 @socketio.on('send_message')
 def handle_message(data):
+    room = data.get('room', 'agape_oficial')
     payload = {"user": data.get('user'), "text": data.get('message'), "time": datetime.datetime.now().strftime("%H:%M")}
-    r.rpush("chat:Geral", json.dumps(payload))
+    r.rpush(f"chat:{room}", json.dumps(payload))
     emit('receive_message', payload, broadcast=True)
 
 if __name__ == '__main__':
